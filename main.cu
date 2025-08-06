@@ -283,13 +283,267 @@ __device__ __host__ static inline int xNextIntJ(Xoroshiro *xr, uint32_t n)
     return val;
 }
 
+typedef struct {
+    Xoroshiro internal;
+    int num_calls;
+} RNG; 
+
+#define XRSR_MIX1          0xbf58476d1ce4e5b9
+#define XRSR_MIX2          0x94d049bb133111eb
+#define XRSR_MIX1_INVERSE  0x96de1b173f119089
+#define XRSR_MIX2_INVERSE  0x319642b2d24d8ec3
+#define XRSR_SILVER_RATIO  0x6a09e667f3bcc909
+#define XRSR_GOLDEN_RATIO  0x9e3779b97f4a7c15
+
+__device__ __host__   uint64_t mix64(uint64_t a) {
+	a = (a ^ a >> 30) * XRSR_MIX1;
+	a = (a ^ a >> 27) * XRSR_MIX2;
+	return a ^ a >> 31;
+}
+
+__device__ __host__  RNG rng_new() {
+    return (RNG){.internal=(Xoroshiro){0}};
+}
+
+__device__ __host__  static void rng_set_seed(RNG *rng, uint64_t seed) {
+    seed ^= XRSR_SILVER_RATIO;
+    rng->internal.lo = mix64(seed);
+    rng->internal.hi = mix64(seed + XRSR_GOLDEN_RATIO);
+}
+
+__device__ __host__  static void rng_set_internal(RNG *rng, uint64_t lo, uint64_t hi) {
+    rng->internal.lo = lo;
+    rng->internal.hi = hi;
+}
+
+__device__ __host__  static uint64_t rng_next(RNG *rng, int32_t bits) {
+    rng->num_calls++;
+    return xNextLong(&rng->internal) >> (64 - bits);
+}
+
+__device__ __host__  static int32_t rng_next_int(RNG *rng, uint32_t bound) {
+    uint32_t r = rng_next(rng, 31);
+    uint32_t m = bound - 1;
+    if ((bound & m) == 0) {
+        // (int)((long)p_188504_ * (long)this.next(31) >> 31);
+        r = (uint32_t)((uint64_t)bound * (uint64_t)r >> 31);
+    }
+    else {
+        for (uint32_t u = r; (int32_t)(u - (r = u % bound) + m) < 0; u = rng_next(rng, 31));
+    }
+    return r;
+}
+
+__device__ __host__  static float rng_next_float(RNG *rng) {
+    return xNextFloat(&rng->internal);
+}
+
+__device__ __host__  static double rng_next_double(RNG *rng) { // whoops!
+    int32_t i = rng_next(rng, 26);
+    int32_t j = rng_next(rng, 27);
+    uint64_t k = ((uint64_t)i << 27) + (uint64_t)j;
+    return (double)k * (double)1.110223E-16F;
+}
+
+__device__ __host__  static int rng_next_between_inclusive(RNG *rng, int i, int j) {
+    return rng_next_int(rng, j - i + 1) + i;
+}
+
+__device__ __host__  static uint64_t rng_next_long(RNG *rng) {
+    int32_t i = rng_next(rng, 32);
+    int32_t j = rng_next(rng, 32);
+    uint64_t k = (uint64_t)i << 32;
+    return k + (uint64_t)j;
+}
+
+__device__ __host__  static uint64_t rng_set_feature_seed(RNG *rng, uint64_t p_190065_, int32_t p_190066_, int32_t p_190067_) {
+    uint64_t i = p_190065_ + (uint64_t)p_190066_ + (uint64_t)(10000 * p_190067_);
+    //printf("Salt = %" PRIu64 "\n", (uint64_t)p_190066_ + (uint64_t)(10000 * p_190067_));
+    rng_set_seed(rng, i);
+    return i;
+}
+
+__device__ __host__  uint64_t reverse_decoration_seed(uint64_t decorator_seed, int index, int step) {
+    return decorator_seed - (uint64_t)index - 10000L * (uint64_t)step;
+}
+
+__device__ __host__  static uint64_t rng_set_decoration_seed(RNG *rng, uint64_t world_seed, int32_t x, int32_t z) {
+    rng_set_seed(rng, world_seed);
+
+    uint64_t a = rng_next_long(rng) | 1L;
+    uint64_t b = rng_next_long(rng) | 1L;
+
+    // printf("the k to recover = %" PRIu64 "\n", (a * (uint64_t)x + b * (uint64_t)z));
+    uint64_t k = (a * (uint64_t)x + b * (uint64_t)z) ^ world_seed;
+    // printf("real k = %" PRIu64 "\n", k);
+    // printf("invert k = %" PRIu64 "\n", k ^ world_seed);
+    rng_set_seed(rng, k);
+    return k;
+}
+
+typedef struct __align__(16) {
+    int dx, dz, height;
+    bool is_valid;
+} Offset;
+
+__device__ __host__  Offset offset_new(int dx, int dz, int height) {
+    return (Offset){.dx=dx, .dz=dz, .height=height, .is_valid=true};
+}
+
+__device__ __host__  Offset offset_invalid_new() {
+    return (Offset){.dx=-1, .dz=-1, .height=-1, .is_valid=false};
+}
+
+__device__ __host__  Offset get_position_standard(RNG *rng) {
+    int dx = rng_next_int(rng, 16); // spread
+    int dz = rng_next_int(rng, 16);
+
+    int i = -144;
+    int j = 16;
+    int plateau = 0;
+
+    int l = ((j-i) - plateau) / 2;
+    int i1 = (j-i) - l;
+    int height = i + rng_next_between_inclusive(rng, 0, i1) + rng_next_between_inclusive(rng, 0, l);
+
+    return offset_new(dx, dz, height);
+}
+
+__device__ __host__  Offset get_small_diamond_position(RNG *rng, uint64_t chunk_seed) {
+    // uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 18, 6);
+    // (void)feature_seed;
+    
+    return get_position_standard(rng);
+}
+
+__device__ __host__  Offset get_medium_diamond_position(RNG *rng, uint64_t chunk_seed) {
+    // uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 19, 6);
+    // (void)feature_seed;
+    
+    int dx = rng_next_int(rng, 16);
+    int dz = rng_next_int(rng, 16);
+
+    int i = -64;
+    int j = -4;
+
+    int height = rng_next_between_inclusive(rng, i, j);
+
+    return offset_new(dx, dz, height);
+}
+
+__device__ __host__ Offset get_large_diamond_position(RNG *rng, uint64_t chunk_seed) {
+    uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 20, 6);
+    (void)feature_seed;
+
+    if (!(rng_next_float(rng) < 1.0F / (float)9.0)) {
+        return offset_invalid_new();
+    }
+
+    return get_position_standard(rng);
+}
+
+__device__ __host__  Offset get_buried_diamond_position(RNG *rng, uint64_t chunk_seed) {
+    // uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 21, 6);
+    // (void)feature_seed;
+
+    return get_position_standard(rng);
+}
+
+
+
+__device__ __host__  float offset_distance_squared(const Offset *a, const Offset *b) {
+    int x1 = a->dx;
+    int y1 = a->height;
+    int z1 = a->dz;
+
+    int x2 = b->dx;
+    int y2 = b->height;
+    int z2 = b->dz;
+
+    return ((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1) + (z2 - z1) * (z2 - z1));
+}
+
+#define PI 3.14159265358979
+
+__device__ __host__  bool in_range(int y) {
+    return (y > -55) && (y < -6);
+}
+
+__device__ __host__  bool get_small_diamond_offsets(RNG *rng, uint64_t chunk_seed, Offset *offsets, size_t *sz) {
+    uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 18, 6);
+    Offset o = get_small_diamond_position(rng, chunk_seed);
+    offsets[*sz] = o;
+    (*sz)++;
+    return in_range(o.height);
+}
+
+__device__ __host__  bool get_medium_diamond_offsets(RNG *rng, uint64_t chunk_seed, Offset *offsets, size_t *sz) {
+    uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 19, 6);
+    Offset o = get_medium_diamond_position(rng, chunk_seed);
+    offsets[*sz] = o;
+    (*sz)++;
+    return in_range(o.height);
+}
+
+__device__ __host__  bool get_buried_diamond_offsets(RNG *rng, uint64_t chunk_seed, Offset *offsets, size_t *sz) {
+    uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 21, 6);
+    #pragma unroll
+    for (int i = 0; i < 4; i++) {
+        Offset o = get_buried_diamond_position(rng, chunk_seed);
+        
+        if (!in_range(o.height)) {
+            return false;
+        }
+
+        // rng->num_calls = 0;
+        offsets[*sz] = o;
+        (*sz)++;
+        // advance_rng(&rng, o.dx, o.height, o.dz, buried_diamond_size, buried_diamond_discard); 
+        // rng->num_calls = 0;
+        rng_next_float(rng);
+        rng_next_int(rng, 3);
+        rng_next_int(rng, 3);
+
+        #pragma unroll
+        for (int i = 0; i < 8; i++) {
+            rng_next_double(rng);
+        }
+    }
+    return true;
+}
 
 __global__ void kernel(uint64_t s, uint64_t *out) {
-    uint64_t input_seed = blockDim.x * blockIdx.x + threadIdx.x + s;
-    //Do something to seed, usually best to keep 'input_seed' alone in case you need it later.
-    uint64_t seed = input_seed;
-    /*Insert filter code here - return early if the seed does not match all criteria*/
-    out[blockDim.x * blockIdx.x + threadIdx.x] = seed;
+    uint64_t chunk_seed = blockDim.x * blockIdx.x + threadIdx.x + s;
+
+    RNG rng = rng_new();
+    Offset large = get_large_diamond_position(&rng, chunk_seed);
+    
+    if (!large.is_valid) {
+        return;
+    }
+
+    Offset offsets[15] = {0};
+    size_t sz = 1;
+    offsets[0] = large;
+
+    if (!get_small_diamond_offsets(&rng, chunk_seed, offsets, &sz)) {
+        return;
+    }
+    if (!get_medium_diamond_offsets(&rng, chunk_seed, offsets, &sz)) {
+        return;
+    }
+    if (!get_buried_diamond_offsets(&rng, chunk_seed, offsets, &sz)) {
+        return;
+    }
+
+    const Offset *cmp = &offsets[0];
+    #pragma unroll
+    for (int i = 1; i < sz; i++) {
+        if (offset_distance_squared(cmp, (const Offset *)&offsets[i]) > 9.0) {
+            return;
+        }
+    }
+    out[blockDim.x * blockIdx.x + threadIdx.x] = chunk_seed;
 }
 
 #include <time.h>
