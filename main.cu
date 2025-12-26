@@ -302,7 +302,7 @@ __device__ __host__   uint64_t mix64(uint64_t a) {
 }
 
 __device__ __host__  RNG rng_new() {
-    return (RNG){.internal=(Xoroshiro){0}};
+    return {{0}};
 }
 
 __device__ __host__  static void rng_set_seed(RNG *rng, uint64_t seed) {
@@ -381,20 +381,20 @@ __device__ __host__  static uint64_t rng_set_decoration_seed(RNG *rng, uint64_t 
     return k;
 }
 
-typedef struct __align__(16) {
+typedef struct /*__align__(16) i think this gets auto-aligned*/ {
     int dx, dz, height;
     bool is_valid;
 } Offset;
 
-__device__ __host__  Offset offset_new(int dx, int dz, int height) {
-    return (Offset){.dx=dx, .dz=dz, .height=height, .is_valid=true};
+__device__ __host__ Offset offset_new(int dx, int dz, int height) {
+    return {dx, dz, height, true};
 }
 
-__device__ __host__  Offset offset_invalid_new() {
-    return (Offset){.dx=-1, .dz=-1, .height=-1, .is_valid=false};
+__device__ __host__ Offset offset_invalid_new() {
+    return {-1, -1, -1, false};
 }
 
-__device__ __host__  Offset get_position_standard(RNG *rng) {
+__device__ __host__ Offset get_position_standard(RNG *rng) {
     int dx = rng_next_int(rng, 16); // spread
     int dz = rng_next_int(rng, 16);
 
@@ -698,7 +698,6 @@ int main(int argc, char **argv) {
 
 		}
 		fflush(seedsout);
-
     }
 
 
@@ -715,5 +714,8 @@ int main(int argc, char **argv) {
 	double speedup = seeds_per_second / 199000;
 	fprintf(stderr, "seeds per second: %f\n", seeds_per_second);
 	fprintf(stderr, "speedup: %fx\n", speedup);
+
+#ifdef BOINC
     boinc_finish(0);
+#endif
 }
