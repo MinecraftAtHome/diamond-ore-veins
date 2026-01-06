@@ -381,6 +381,8 @@ __device__ __host__  static uint64_t rng_set_decoration_seed(RNG *rng, uint64_t 
     return k;
 }
 
+#define CUDA_FUNCTION __device__ __host__
+
 typedef struct {
     int dx, dz, height;
     bool is_valid;
