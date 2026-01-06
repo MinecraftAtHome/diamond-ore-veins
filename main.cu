@@ -381,20 +381,20 @@ __device__ __host__  static uint64_t rng_set_decoration_seed(RNG *rng, uint64_t 
     return k;
 }
 
-typedef struct /*__align__(16) i think this gets auto-aligned*/ {
+typedef __align__(16) struct {
     int dx, dz, height;
     bool is_valid;
 } Offset;
 
-__device__ __host__ Offset offset_new(int dx, int dz, int height) {
+CUDA_FUNCTION Offset offset_new(int dx, int dz, int height) {
     return {dx, dz, height, true};
 }
 
-__device__ __host__ Offset offset_invalid_new() {
+CUDA_FUNCTION Offset offset_invalid_new() {
     return {-1, -1, -1, false};
 }
 
-__device__ __host__ Offset get_position_standard(RNG *rng) {
+CUDA_FUNCTION Offset get_position_standard(RNG *rng) {
     int dx = rng_next_int(rng, 16); // spread
     int dz = rng_next_int(rng, 16);
 
@@ -409,14 +409,14 @@ __device__ __host__ Offset get_position_standard(RNG *rng) {
     return offset_new(dx, dz, height);
 }
 
-__device__ __host__  Offset get_small_diamond_position(RNG *rng, uint64_t chunk_seed) {
+CUDA_FUNCTION Offset get_small_diamond_position(RNG *rng, uint64_t chunk_seed) {
     // uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 18, 6);
     // (void)feature_seed;
     
     return get_position_standard(rng);
 }
 
-__device__ __host__  Offset get_medium_diamond_position(RNG *rng, uint64_t chunk_seed) {
+CUDA_FUNCTION Offset get_medium_diamond_position(RNG *rng, uint64_t chunk_seed) {
     // uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 19, 6);
     // (void)feature_seed;
     
@@ -431,27 +431,21 @@ __device__ __host__  Offset get_medium_diamond_position(RNG *rng, uint64_t chunk
     return offset_new(dx, dz, height);
 }
 
-__device__ __host__ Offset get_large_diamond_position(RNG *rng, uint64_t chunk_seed) {
-    uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 20, 6);
-    (void)feature_seed;
+CUDA_FUNCTION bool get_large_diamond_position(RNG *rng, uint64_t chunk_seed) {
+    (void)rng_set_feature_seed(rng, chunk_seed, 20, 6);
+    return (rng_next_float(rng) < 1.0F / (float)9.0);
+    // idiotic branching... how stupid
+    // if (!(rng_next_float(rng) < 1.0F / (float)9.0)) {
+        // return offset_invalid_new();
+    // }
+    // return get_position_standard(rng);
+}
 
-    if (!(rng_next_float(rng) < 1.0F / (float)9.0)) {
-        return offset_invalid_new();
-    }
-
+CUDA_FUNCTION Offset get_buried_diamond_position(RNG *rng, uint64_t chunk_seed) {
     return get_position_standard(rng);
 }
 
-__device__ __host__  Offset get_buried_diamond_position(RNG *rng, uint64_t chunk_seed) {
-    // uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 21, 6);
-    // (void)feature_seed;
-
-    return get_position_standard(rng);
-}
-
-
-
-__device__ __host__  float offset_distance_squared(const Offset *a, const Offset *b) {
+CUDA_FUNCTION float offset_distance_squared(const Offset *a, const Offset *b) {
     int x1 = a->dx;
     int y1 = a->height;
     int z1 = a->dz;
@@ -463,21 +457,20 @@ __device__ __host__  float offset_distance_squared(const Offset *a, const Offset
     return ((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1) + (z2 - z1) * (z2 - z1));
 }
 
-#define PI 3.14159265358979
-
-__device__ __host__  bool in_range(int y) {
+CUDA_FUNCTION bool in_range(int y) {
     return (y > -55) && (y < -6);
 }
 
-__device__ __host__  bool get_small_diamond_offsets(RNG *rng, uint64_t chunk_seed, Offset *offsets, size_t *sz) {
+CUDA_FUNCTION bool get_small_diamond_offsets(RNG *rng, uint64_t chunk_seed, Offset *offsets, size_t *sz) {
     uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 18, 6);
     Offset o = get_small_diamond_position(rng, chunk_seed);
+    // which idiot wrote this?? possible wasteful memory writes... (looks like it might not be that impactful)
     offsets[*sz] = o;
     (*sz)++;
     return in_range(o.height);
 }
 
-__device__ __host__  bool get_medium_diamond_offsets(RNG *rng, uint64_t chunk_seed, Offset *offsets, size_t *sz) {
+CUDA_FUNCTION bool get_medium_diamond_offsets(RNG *rng, uint64_t chunk_seed, Offset *offsets, size_t *sz) {
     uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 19, 6);
     Offset o = get_medium_diamond_position(rng, chunk_seed);
     offsets[*sz] = o;
@@ -485,7 +478,7 @@ __device__ __host__  bool get_medium_diamond_offsets(RNG *rng, uint64_t chunk_se
     return in_range(o.height);
 }
 
-__device__ __host__  bool get_buried_diamond_offsets(RNG *rng, uint64_t chunk_seed, Offset *offsets, size_t *sz) {
+CUDA_FUNCTION bool get_buried_diamond_offsets(RNG *rng, uint64_t chunk_seed, Offset *offsets, size_t *sz) {
     uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 21, 6);
     #pragma unroll
     for (int i = 0; i < 4; i++) {
@@ -495,11 +488,9 @@ __device__ __host__  bool get_buried_diamond_offsets(RNG *rng, uint64_t chunk_se
             return false;
         }
 
-        // rng->num_calls = 0;
         offsets[*sz] = o;
         (*sz)++;
-        // advance_rng(&rng, o.dx, o.height, o.dz, buried_diamond_size, buried_diamond_discard); 
-        // rng->num_calls = 0;
+
         rng_next_float(rng);
         rng_next_int(rng, 3);
         rng_next_int(rng, 3);
@@ -516,34 +507,31 @@ __global__ void kernel(uint64_t s, uint64_t *out) {
     uint64_t chunk_seed = blockDim.x * blockIdx.x + threadIdx.x + s;
 
     RNG rng = rng_new();
-    Offset large = get_large_diamond_position(&rng, chunk_seed);
     
-    if (!large.is_valid) {
+    if (!get_large_diamond_position(&rng, chunk_seed)) {
         return;
     }
 
     Offset offsets[15] = {0};
     size_t sz = 1;
-    offsets[0] = large;
+    offsets[0] = get_position_standard(&rng); // large
 
-    if (!get_small_diamond_offsets(&rng, chunk_seed, offsets, &sz)) {
-        return;
-    }
-    if (!get_medium_diamond_offsets(&rng, chunk_seed, offsets, &sz)) {
-        return;
-    }
-    if (!get_buried_diamond_offsets(&rng, chunk_seed, offsets, &sz)) {
+    if (!get_small_diamond_offsets(&rng, chunk_seed, offsets, &sz) || 
+        !get_medium_diamond_offsets(&rng, chunk_seed, offsets, &sz) || 
+        !get_buried_diamond_offsets(&rng, chunk_seed, offsets, &sz)
+    ) {
         return;
     }
 
     const Offset *cmp = &offsets[0];
     #pragma unroll
-    for (int i = 1; i < sz; i++) {
-        if (offset_distance_squared(cmp, (const Offset *)&offsets[i]) > 9.0) {
+    for (int i = 1; i < 6; i++) {
+        if (offset_distance_squared(cmp, (const Offset *)&offsets[i]) > 20.0) {
             return;
         }
     }
-    out[blockDim.x * blockIdx.x + threadIdx.x] = chunk_seed;
+
+    out[atomicAdd(&results, 1ull)] = chunk_seed;
 }
 
 #include <time.h>
@@ -567,6 +555,9 @@ struct checkpoint_vars {
 };
 
 uint64_t elapsed_chkpoint = 0;
+
+#define NUM_RESULTS 5012
+__managed__ uint64_t results[NUM_RESULTS];
 
 int main(int argc, char **argv) {
 
@@ -597,8 +588,8 @@ int main(int argc, char **argv) {
     uint64_t offsetStart = 0;
     uint64_t *out;
     //GPU Params
-	int blocks = 32768;
-	int threads = 32;
+	int blocks = 16777216;
+	int threads = 256;
     //BOINC
   	#ifdef BOINC
 
@@ -649,17 +640,14 @@ int main(int argc, char **argv) {
         }
     #endif
     cudaSetDevice(device);
-    cudaMallocManaged(&out, (blocks * threads) * sizeof(*out));
-    for(int i = 0; i < (blocks * threads); i++){
-        out[i] = 0;
-    }
+
     auto start = high_resolution_clock::now();
 	printf("starting...\n");
     uint64_t checkpointTemp = 0;
     FILE* seedsout = fopen("seeds.txt", "w+");
     for (uint64_t s = (uint64_t)block_min + offsetStart; s < (uint64_t)block_max; s++) {
         //Call GPU kernel
-        kernel<<<blocks, threads>>>(blocks * threads * s, out);
+        kernel<<<blocks, threads>>>(blocks * threads * s, results);
         GPU_ASSERT(cudaPeekAtLastError());
         GPU_ASSERT(cudaDeviceSynchronize());  
         //Check error from GPU driver, if any
@@ -688,18 +676,15 @@ int main(int argc, char **argv) {
         boinc_fraction_done(frac);
 
         #endif
-        for (unsigned long long i = 0; i < blocks * threads; i++){
+        for (unsigned long long i = 0; i < NUM_RESULTS; i++){
             if(out[i] > 0){
 			    fprintf(seedsout,"%llu\n", out[i]);
                 out[i] = 0;
-                //Grab values from `out` buffer and print to seedsout
-                //Set to 0 after to reset
             }
 
 		}
 		fflush(seedsout);
     }
-
 
     /*
         The end. This prints speed information to stderr.txt - which will be uploaded to the BOINC server, or it can be reviewed locally in a standsalone run.
