@@ -591,8 +591,8 @@ int main(int argc, char **argv) {
     uint64_t offsetStart = 0;
     uint64_t *out;
     //GPU Params
-	int blocks = 16777216;
-	int threads = 256;
+	uint64_t blocks = 16777216;
+	uint64_t threads = 256;
     //BOINC
   	#ifdef BOINC
 
