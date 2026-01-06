@@ -382,6 +382,8 @@ __device__ __host__  static uint64_t rng_set_decoration_seed(RNG *rng, uint64_t 
 }
 
 #define CUDA_FUNCTION __device__ __host__
+#define NUM_RESULTS 5012
+__managed__ uint64_t results[NUM_RESULTS];
 
 typedef struct {
     int dx, dz, height;
@@ -558,8 +560,6 @@ struct checkpoint_vars {
 
 uint64_t elapsed_chkpoint = 0;
 
-#define NUM_RESULTS 5012
-__managed__ uint64_t results[NUM_RESULTS];
 
 int main(int argc, char **argv) {
 
@@ -633,7 +633,7 @@ int main(int argc, char **argv) {
             //Load from checkpoint. You can put any data in data_store that you need to keep between runs of this program.
             boinc_begin_critical_section();
             struct checkpoint_vars data_store;
-            fread(&data_store, sizeof(data_store), 1, checkpoint_data);
+            (void)(fread(&data_store, sizeof(data_store), 1, checkpoint_data));
             offsetStart = data_store.offset;
             elapsed_chkpoint = data_store.elapsed_chkpoint;
             fprintf(stderr, "Checkpoint loaded, task time %d s, seed pos: %llu\n", elapsed_chkpoint, offsetStart);
