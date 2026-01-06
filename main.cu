@@ -384,6 +384,7 @@ __device__ __host__  static uint64_t rng_set_decoration_seed(RNG *rng, uint64_t 
 #define CUDA_FUNCTION __device__ __host__
 #define NUM_RESULTS 5012
 __managed__ uint64_t results[NUM_RESULTS];
+__managed__ unsigned long long int result_count = 0;
 
 typedef struct {
     int dx, dz, height;
@@ -535,7 +536,7 @@ __global__ void kernel(uint64_t s, uint64_t *out) {
         }
     }
 
-    out[atomicAdd(&results, 1ull)] = chunk_seed;
+    out[atomicAdd(&result_count, 1ull)] = chunk_seed;
 }
 
 #include <time.h>
@@ -678,13 +679,14 @@ int main(int argc, char **argv) {
         boinc_fraction_done(frac);
 
         #endif
-        for (unsigned long long i = 0; i < NUM_RESULTS; i++){
-            if(out[i] > 0){
-			    fprintf(seedsout,"%llu\n", out[i]);
-                out[i] = 0;
+        for (unsigned long long i = 0; i < result_count; i++){
+            if(results[i] > 0){
+			    fprintf(seedsout,"%llu\n", results[i]);
+                results[i] = 0;
             }
 
 		}
+        result_count = 0;
 		fflush(seedsout);
     }
 
