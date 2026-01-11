@@ -483,30 +483,7 @@ CUDA_FUNCTION bool get_medium_diamond_offsets(RNG *rng, uint64_t chunk_seed, Off
     return in_range(o.height);
 }
 
-CUDA_FUNCTION bool get_buried_diamond_offsets(RNG *rng, uint64_t chunk_seed, Offset *offsets, size_t *sz) {
-    uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 21, 6);
-    #pragma unroll
-    for (int i = 0; i < 4; i++) {
-        Offset o = get_buried_diamond_position(rng, chunk_seed);
-        
-        if (!in_range(o.height)) {
-            return false;
-        }
-
-        offsets[*sz] = o;
-        (*sz)++;
-
-        rng_next_float(rng);
-        rng_next_int(rng, 3);
-        rng_next_int(rng, 3);
-
-        #pragma unroll
-        for (int i = 0; i < 8; i++) {
-            rng_next_double(rng);
-        }
-    }
-    return true;
-}
+#define THRESH 26.0f
 
 __global__ void kernel(uint64_t s, uint64_t *out) {
     uint64_t chunk_seed = blockDim.x * blockIdx.x + threadIdx.x + s;
@@ -517,22 +494,36 @@ __global__ void kernel(uint64_t s, uint64_t *out) {
         return;
     }
 
-    Offset offsets[15] = {0};
-    size_t sz = 1;
-    offsets[0] = get_position_standard(&rng); // large
+    Offset ref = get_position_standard(&rng); // large
 
-    if (!get_small_diamond_offsets(&rng, chunk_seed, offsets, &sz) || 
-        !get_medium_diamond_offsets(&rng, chunk_seed, offsets, &sz) || 
-        !get_buried_diamond_offsets(&rng, chunk_seed, offsets, &sz)
-    ) {
+    Offset o;
+
+    (void)rng_set_feature_seed(&rng, chunk_seed, 18, 6);
+    o = get_small_diamond_position(&rng, chunk_seed);
+    if (!in_range(o.height) || offset_distance_squared(&ref, &o) > THRESH) {
         return;
     }
 
-    const Offset *cmp = &offsets[0];
+    (void)rng_set_feature_seed(&rng, chunk_seed, 19, 6);
+    o = get_medium_diamond_position(&rng, chunk_seed);
+    if (!in_range(o.height) || offset_distance_squared(&ref, &o) > THRESH) {
+        return;
+    }
+
+    (void)rng_set_feature_seed(&rng, chunk_seed, 21, 6);
     #pragma unroll
-    for (int i = 1; i < 6; i++) {
-        if (offset_distance_squared(cmp, (const Offset *)&offsets[i]) > 20.0) {
+    for (int k = 0; k < 4; k++) {
+        o = get_buried_diamond_position(&rng, chunk_seed);
+        if (!in_range(o.height) || offset_distance_squared(&ref, &o) > THRESH) {
             return;
+        }
+
+        rng_next_float(&rng);
+        rng_next_int(&rng, 3);
+        rng_next_int(&rng, 3);
+        #pragma unroll
+        for (int j = 0; j < 8; j++) {
+            rng_next_double(&rng);
         }
     }
 
