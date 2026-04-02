@@ -104,7 +104,7 @@ jobs:
     - name: build
       run: |
        echo "D:\a\diamond-ore-veins\diamond-ore-veins\lib\x86_64\;D:\a\diamond-ore-veins\diamond-ore-veins\include\" >> $GITHUB_PATH
-       g++ -w -static -m64 -Ofast -lstdc++ .\opencl_main.cpp -o ${{ github.event.repository.name }}-opencl.exe -LD:\a\diamond-ore-veins\diamond-ore-veins\lib\x86_64\ -ID:\a\diamond-ore-veins\diamond-ore-veins\include\ -ID:\a\diamond-ore-veins\diamond-ore-veins\boinc\ -ID:\a\diamond-ore-veins\diamond-ore-veins\boinc\win\ -LD:\a\diamond-ore-veins\diamond-ore-veins\boinc\lib\win\ -lboinc_api -lboinc -lboinc_opencl -lOpenCL -D_WIN64 -DWIN64 -D_WIN32 -DWIN32
+       g++ -w -static -m64 -Ofast -lstdc++ .\opencl_main.cpp -o ${{ github.event.repository.name }}-opencl.exe -LD:\a\diamond-ore-veins\diamond-ore-veins\lib\x86_64\ -ID:\a\diamond-ore-veins\diamond-ore-veins\include\ -ID:\a\diamond-ore-veins\diamond-ore-veins\boinc\ -ID:\a\diamond-ore-veins\diamond-ore-veins\boinc\win\ -LD:\a\diamond-ore-veins\diamond-ore-veins\boinc\lib\win\ -lboinc_api -lboinc -lboinc_opencl -lOpenCL -D_WIN64 -DWIN64 -D_WIN32 -DWIN32 -DCL_HPP_ENABLE_EXCEPTIONS
 
        dir
        
