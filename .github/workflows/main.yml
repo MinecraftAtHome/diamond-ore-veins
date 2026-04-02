@@ -116,6 +116,7 @@ jobs:
         g++ -o ${{ github.event.repository.name }}-opencl opencl_main.cpp \
           -lOpenCL \
           -O3 \
+          -pthread \
           -march=native \
           -DCL_HPP_TARGET_OPENCL_VERSION=300 \
           -DBOINC -Iboinc/ -Lboinc/lib/lin -lcuda -lboinc_api -lboinc
