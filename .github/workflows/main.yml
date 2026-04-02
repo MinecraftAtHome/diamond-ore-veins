@@ -46,41 +46,6 @@ jobs:
       with:
        name: ${{ github.event.repository.name }}-cuda-win
        path: .\${{ github.event.repository.name }}*.exe
-
-  windows_opencl:
-    name: opencl/release/windows
-    runs-on: windows-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: ilammy/msvc-dev-cmd@v1
-
-    - name: Install vcpkg
-      shell: powershell
-      run: |
-        git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
-        C:\vcpkg\bootstrap-vcpkg.bat
-
-    - name: Install OpenCL SDK via vcpkg
-      shell: powershell
-      run: |
-        C:\vcpkg\vcpkg.exe install opencl:x64-windows
-
-    - name: Build OpenCL
-      shell: cmd
-      run: |
-        cl /EHsc /O2 /std:c++17 ^
-          /DCL_HPP_TARGET_OPENCL_VERSION=300 ^
-          /DBOINC /D_WIN32 ^
-          /Iboinc ^
-          /IC:\vcpkg\installed\x64-windows\include ^
-          opencl_main.cpp ^
-          /Fe:${{ github.event.repository.name }}-opencl.exe ^
-          /link /LIBPATH:boinc\lib\win /LIBPATH:C:\vcpkg\installed\x64-windows\lib OpenCL.lib boinc_api.lib boinc.lib user32.lib
-
-    - uses: actions/upload-artifact@v4
-      with:
-        name: ${{ github.event.repository.name }}-opencl-win
-        path: .\${{ github.event.repository.name }}-opencl.exe
         
   linux_cuda:
     name: cuda/release/linux
