@@ -85,3 +85,30 @@ jobs:
           -march=native \
           -DCL_HPP_TARGET_OPENCL_VERSION=300 \
           -DBOINC -Iboinc/ -Lboinc/lib/lin -lcuda -lboinc_api -lboinc
+
+    - uses: actions/upload-artifact@v4
+      with:
+       name: ${{ github.event.repository.name }}-opencl-lin
+       path: ./${{ github.event.repository.name }}-opencl*
+
+  windows_opencl:
+    name: opencl/release/windows
+    runs-on: [windows-latest]
+    steps:
+    - uses: actions/checkout@v2
+    - uses: msys2/setup-msys2@v2
+    - name: setup
+      run: |
+       msys2 -c 'wget https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/files/1406216/lightOCLSDK.zip -O amdocl.zip'
+       jar xf amdocl.zip 
+    - name: build
+      run: |
+       echo "D:\a\diamond-ore-veins\diamond-ore-veins\lib\x86_64\;D:\a\diamond-ore-veins\diamond-ore-veins\include\" >> $GITHUB_PATH
+       g++ -w -static -m64 -Ofast -lstdc++ .\opencl_main.cpp -o ${{ github.event.repository.name }}-opencl.exe -LD:\a\diamond-ore-veins\diamond-ore-veins\lib\x86_64\ -ID:\a\diamond-ore-veins\diamond-ore-veins\include\ -ID:\a\diamond-ore-veins\diamond-ore-veins\boinc\ -ID:\a\diamond-ore-veins\diamond-ore-veins\boinc\win\ -LD:\a\diamond-ore-veins\diamond-ore-veins\boinc\lib\win\ -lboinc_api -lboinc -lboinc_opencl -lOpenCL -D_WIN64 -DWIN64 -D_WIN32 -DWIN32
+
+       dir
+       
+    - uses: actions/upload-artifact@v4
+      with:
+       name: ${{ github.event.repository.name }}-opencl-win
+       path: ./${{ github.event.repository.name }}-opencl*.exe

@@ -8,6 +8,7 @@
 #include <string>
 #include <iostream>
 
+#define CL_HPP_ENABLE_EXCEPTIONS
 #if __has_include(<CL/opencl.hpp>)
   #include <CL/opencl.hpp>
 #elif __has_include(<CL/cl2.hpp>)
@@ -253,8 +254,7 @@ inline u8 close_enough(Offset ref, Offset o) {
     );
 }
 
-#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
-__kernel void seed_kernel(u64 offset, __global u64 *out, volatile __global u64 *result_count) {
+__kernel void seed_kernel(u64 offset, __global u64 *out, volatile __global u32 *result_count) {
     u64 chunk_seed = (u64)get_global_id(0) + offset;
 
     RNG rng = rng_new();
@@ -287,7 +287,7 @@ __kernel void seed_kernel(u64 offset, __global u64 *out, volatile __global u64 *
         }
     }
 
-    u64 idx = atomic_inc(result_count);
+    u32 idx = atomic_inc(result_count);
     out[idx] = chunk_seed;
 }
 )CLC";
@@ -363,32 +363,62 @@ int main(int argc, char **argv) {
     #endif
     // cudaSetDevice(device);
     // opencl setup start
+    
     std::vector<cl::Platform> all_platforms;
-    cl::Platform::get(&all_platforms);
+    try {
+        cl::Platform::get(&all_platforms);
+    }
+    catch (cl::Error& e) {
+        fprintf(stderr, "OpenCL error: %s (%d)\n", e.what(), e.err());
+        exit(1);
+    }
+
+    if (all_platforms.size() < 1) {
+        fprintf(stderr, "No OpenCL platform found!\n");
+        exit(1);
+    } 
 
     std::vector<cl::Device> all_devices;
-    all_platforms[0].getDevices(CL_DEVICE_TYPE_ALL, &all_devices);
+    try {
+        all_platforms[0].getDevices(CL_DEVICE_TYPE_ALL, &all_devices);
+    }
+    catch (cl::Error& e) {
+        fprintf(stderr, "OpenCL error: %s (%d)\n", e.what(), e.err());
+        exit(1);
+    }
 
-    cl::Device cl_device = all_devices[device];
-    cl::Context ctx({cl_device});
+    if (all_devices.size() < 1) {
+        fprintf(stderr, "No OpenCL device found!\n");
+        exit(1);
+    }
 
-    cl::Program::Sources sources;
-    sources.push_back({kernel_source, strlen(kernel_source)});
+    cl::Device cl_device;
+    cl::Context ctx;
+    cl::Program program;
+    try {
+        cl_device = all_devices[device];
+        ctx = cl::Context({cl_device});
 
-    cl::Program program(ctx, sources);
-    program.build({cl_device});
+        cl::Program::Sources sources;
+        sources.push_back({kernel_source, strlen(kernel_source)});
+        program = cl::Program(ctx, sources);
+        program.build({cl_device});
+    }
+    catch (cl::Error& e) {
+        fprintf(stderr, "OpenCL error: %s (%d)\n", e.what(), e.err());
+        exit(1);
+    }
 
     cl::CommandQueue queue(ctx, cl_device);
 
     cl::Buffer cl_out(ctx, CL_MEM_READ_WRITE, sizeof(uint64_t) * 512);
-    cl::Buffer result_count(ctx, CL_MEM_READ_WRITE, sizeof(uint64_t));
+    cl::Buffer result_count(ctx, CL_MEM_READ_WRITE, sizeof(uint32_t));
 
-    uint64_t zero64 = 0ull;
-    uint64_t one64 = 1ull;
-    uint64_t h_result_count = 0;
+    uint32_t zero32 = 0ull;
+    uint32_t h_result_count = 0;
     uint64_t h_out[512];
 
-    queue.enqueueWriteBuffer(result_count, CL_TRUE, 0, sizeof(uint64_t), &zero64);
+    queue.enqueueWriteBuffer(result_count, CL_TRUE, 0, sizeof(uint32_t), &zero32);
 
     uint64_t zero = 0;
 
@@ -409,9 +439,15 @@ int main(int argc, char **argv) {
         // kernel launch start
         for (uint64_t i = 0; i < 64; i++) {
             uint64_t o = (s * (1ull << 32)) + (i * (1ull << 26));
-            seed_kernel.setArg(0, o);
-            queue.enqueueNDRangeKernel(seed_kernel, cl::NullRange, global_size, local_size);
-            queue.finish();
+            try {
+                seed_kernel.setArg(0, o);
+                queue.enqueueNDRangeKernel(seed_kernel, cl::NullRange, global_size, local_size);
+                queue.finish();
+            }
+            catch (cl::Error& e) {
+                fprintf(stderr, "OpenCL error: %s (%d)\n", e.what(), e.err());
+                exit(1);
+            }
         }
         // kernel launch end
     
@@ -440,7 +476,7 @@ int main(int argc, char **argv) {
         boinc_fraction_done(frac);
         #endif
 
-        queue.enqueueReadBuffer(result_count, CL_TRUE, 0, sizeof(uint64_t),      &h_result_count);
+        queue.enqueueReadBuffer(result_count, CL_TRUE, 0, sizeof(uint32_t),      &h_result_count);
         queue.enqueueReadBuffer(cl_out,          CL_TRUE, 0, sizeof(uint64_t) * 512, h_out);
         
         for (int i = 0; i < (int)h_result_count; i++) {
@@ -448,7 +484,7 @@ int main(int argc, char **argv) {
             h_out[i] = 0ull;
         }
 
-        queue.enqueueWriteBuffer(result_count, CL_TRUE, 0, sizeof(uint64_t), &zero64);
+        queue.enqueueWriteBuffer(result_count, CL_TRUE, 0, sizeof(uint32_t), &zero32);
         seed_kernel.setArg(2, result_count);    
 
 		fflush(seedsout);
