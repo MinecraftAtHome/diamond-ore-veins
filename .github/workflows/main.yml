@@ -32,7 +32,6 @@ jobs:
         xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\visual_studio_integration-windows-x86_64-12.6.77-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6" /E /I /H /Y
         xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\cuda_nvprof-windows-x86_64-12.6.80-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6" /E /I /H /Y
         xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\cuda_cccl-windows-x86_64-12.6.77-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6" /E /I /H /Y
-    # Default installation path for CUDA Toolkit is C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6
     - name: Add Path
       run: |
         echo "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.6\\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
@@ -41,13 +40,40 @@ jobs:
         echo "CUDA_PATH_V12_2=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
     - name: build
       run: |
-      
         nvcc -g -maxrregcount 128 --resource-usage -lineinfo -Xptxas -lineinfo -v -O3 -arch=all -m=64 main.cu -o ${{ github.event.repository.name }}-cuda.exe -diag-suppress 177 -ID:\a\${{ github.event.repository.name }}\${{ github.event.repository.name }}\boinc\ -ID:\a\${{ github.event.repository.name }}\${{ github.event.repository.name }}\boinc\win\ -LD:\a\${{ github.event.repository.name }}\${{ github.event.repository.name }}\boinc\lib\win\ -lboinc_api -lboinc -lcuda -luser32 -DBOINC -D_WIN32 -allow-unsupported-compiler
         dir
     - uses: actions/upload-artifact@v4
       with:
        name: ${{ github.event.repository.name }}-cuda-win
        path: .\${{ github.event.repository.name }}*.exe
+
+  windows_opencl:
+    name: opencl/release/windows
+    runs-on: [windows-latest]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Install OpenCL SDK
+      run: |
+        choco install opencl-intel-sdk -y
+
+    - name: build
+      shell: cmd
+      run: |
+        cl /EHsc /O2 /std:c++17 ^
+          /DCL_HPP_TARGET_OPENCL_VERSION=300 ^
+          /DBOINC /D_WIN32 ^
+          /Iboinc ^
+          opencl_main.cpp ^
+          /Fe:${{ github.event.repository.name }}-opencl.exe ^
+          /link /LIBPATH:boinc\lib\win OpenCL.lib boinc_api.lib boinc.lib user32.lib
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ github.event.repository.name }}-opencl-win
+        path: .\${{ github.event.repository.name }}-opencl.exe
+
   linux_cuda:
     name: cuda/release/linux
     runs-on: [ubuntu-latest]
@@ -64,3 +90,29 @@ jobs:
       with:
        name: ${{ github.event.repository.name }}-cuda-lin
        path: ./${{ github.event.repository.name }}-cuda*
+
+  linux_opencl:
+    name: opencl/release/linux
+    runs-on: [ubuntu-latest]
+    container: nvidia/cuda:12.6.3-devel-ubuntu20.04
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install OpenCL dev packages
+      run: |
+        apt-get update
+        apt-get install -y ocl-icd-opencl-dev opencl-headers
+
+    - name: build
+      run: |
+        g++ -o ${{ github.event.repository.name }}-opencl opencl_main.cpp -lOpenCL \
+          -O3 \
+          -march=native \
+          -DCL_HPP_TARGET_OPENCL_VERSION=300 \
+          -DBOINC -Iboinc/ -Lboinc/lib/lin -lcuda -lboinc_api -lboinc
+        ls -la
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ github.event.repository.name }}-opencl-lin
+        path: ./${{ github.event.repository.name }}-opencl
