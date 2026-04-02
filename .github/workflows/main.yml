@@ -49,31 +49,39 @@ jobs:
 
   windows_opencl:
     name: opencl/release/windows
-    runs-on: [windows-latest]
+    runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
     - uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Install OpenCL SDK
+    - name: Install vcpkg
+      shell: powershell
       run: |
-        choco install opencl-intel-sdk -y
+        git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+        C:\vcpkg\bootstrap-vcpkg.bat
 
-    - name: build
+    - name: Install OpenCL SDK via vcpkg
+      shell: powershell
+      run: |
+        C:\vcpkg\vcpkg.exe install opencl:x64-windows
+
+    - name: Build OpenCL
       shell: cmd
       run: |
         cl /EHsc /O2 /std:c++17 ^
           /DCL_HPP_TARGET_OPENCL_VERSION=300 ^
           /DBOINC /D_WIN32 ^
           /Iboinc ^
+          /IC:\vcpkg\installed\x64-windows\include ^
           opencl_main.cpp ^
           /Fe:${{ github.event.repository.name }}-opencl.exe ^
-          /link /LIBPATH:boinc\lib\win OpenCL.lib boinc_api.lib boinc.lib user32.lib
+          /link /LIBPATH:boinc\lib\win /LIBPATH:C:\vcpkg\installed\x64-windows\lib OpenCL.lib boinc_api.lib boinc.lib user32.lib
 
     - uses: actions/upload-artifact@v4
       with:
         name: ${{ github.event.repository.name }}-opencl-win
         path: .\${{ github.event.repository.name }}-opencl.exe
-
+        
   linux_cuda:
     name: cuda/release/linux
     runs-on: [ubuntu-latest]
@@ -101,18 +109,16 @@ jobs:
     - name: Install OpenCL dev packages
       run: |
         apt-get update
-        apt-get install -y ocl-icd-opencl-dev opencl-headers
+        apt-get install -y \
+          ocl-icd-opencl-dev \
+          opencl-headers \
+          opencl-clhpp-headers
 
-    - name: build
+    - name: Build OpenCL
       run: |
-        g++ -o ${{ github.event.repository.name }}-opencl opencl_main.cpp -lOpenCL \
+        g++ -o ${{ github.event.repository.name }}-opencl opencl_main.cpp \
+          -lOpenCL \
           -O3 \
           -march=native \
           -DCL_HPP_TARGET_OPENCL_VERSION=300 \
           -DBOINC -Iboinc/ -Lboinc/lib/lin -lcuda -lboinc_api -lboinc
-        ls -la
-
-    - uses: actions/upload-artifact@v4
-      with:
-        name: ${{ github.event.repository.name }}-opencl-lin
-        path: ./${{ github.event.repository.name }}-opencl
