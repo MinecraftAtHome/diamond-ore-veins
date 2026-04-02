@@ -108,11 +108,20 @@ jobs:
 
     - name: Install OpenCL dev packages
       run: |
+        set -eux
+        apt-get update
+        apt-get install -y software-properties-common
+        add-apt-repository -y universe
         apt-get update
         apt-get install -y \
+          build-essential \
           ocl-icd-opencl-dev \
           opencl-headers \
           opencl-clhpp-headers
+
+        dpkg -L opencl-clhpp-headers || true
+        ls -la /usr/include/CL || true
+        test -f /usr/include/CL/opencl.hpp
 
     - name: Build OpenCL
       run: |
