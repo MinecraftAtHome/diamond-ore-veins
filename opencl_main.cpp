@@ -8,10 +8,6 @@
 #include <string>
 #include <iostream>
 
-#define CL_HPP_ENABLE_EXCEPTIONS
-#define CL_HPP_TARGET_OPENCL_VERSION 120
-#define CL_HPP_MINIMUM_OPENCL_VERSION 120
-
 #if __has_include(<CL/opencl.hpp>)
   #include <CL/opencl.hpp>
 #elif __has_include(<CL/cl2.hpp>)
@@ -367,12 +363,12 @@ int main(int argc, char **argv) {
     // cudaSetDevice(device);
     // opencl setup start
     
+    cl_int err;
+
     std::vector<cl::Platform> all_platforms;
-    try {
-        cl::Platform::get(&all_platforms);
-    }
-    catch (cl::Error& e) {
-        fprintf(stderr, "OpenCL error: %s (%d)\n", e.what(), e.err());
+    err = cl::Platform::get(&all_platforms);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr, "OpenCL error: %d\n", err);
         exit(1);
     }
 
@@ -382,11 +378,9 @@ int main(int argc, char **argv) {
     } 
 
     std::vector<cl::Device> all_devices;
-    try {
-        all_platforms[0].getDevices(CL_DEVICE_TYPE_ALL, &all_devices);
-    }
-    catch (cl::Error& e) {
-        fprintf(stderr, "OpenCL error: %s (%d)\n", e.what(), e.err());
+    err = all_platforms[0].getDevices(CL_DEVICE_TYPE_ALL, &all_devices);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr, "OpenCL error: %d\n", err);
         exit(1);
     }
 
@@ -398,17 +392,16 @@ int main(int argc, char **argv) {
     cl::Device cl_device;
     cl::Context ctx;
     cl::Program program;
-    try {
-        cl_device = all_devices[device];
-        ctx = cl::Context({cl_device});
 
-        cl::Program::Sources sources;
-        sources.push_back({kernel_source, strlen(kernel_source)});
-        program = cl::Program(ctx, sources);
-        program.build({cl_device});
-    }
-    catch (cl::Error& e) {
-        fprintf(stderr, "OpenCL error: %s (%d)\n", e.what(), e.err());
+    cl_device = all_devices[device];
+    ctx = cl::Context({cl_device});
+
+    cl::Program::Sources sources;
+    sources.push_back({kernel_source, strlen(kernel_source)});
+    program = cl::Program(ctx, sources);
+    err = program.build({cl_device});
+    if (err != CL_SUCCESS) {
+        fprintf(stderr, "OpenCL error: %d\n", err);
         exit(1);
     }
 
@@ -442,15 +435,13 @@ int main(int argc, char **argv) {
         // kernel launch start
         for (uint64_t i = 0; i < 64; i++) {
             uint64_t o = (s * (1ull << 32)) + (i * (1ull << 26));
-            try {
-                seed_kernel.setArg(0, o);
-                queue.enqueueNDRangeKernel(seed_kernel, cl::NullRange, global_size, local_size);
-                queue.finish();
-            }
-            catch (cl::Error& e) {
-                fprintf(stderr, "OpenCL error: %s (%d)\n", e.what(), e.err());
+            seed_kernel.setArg(0, o);
+            err = queue.enqueueNDRangeKernel(seed_kernel, cl::NullRange, global_size, local_size);
+            if (err != CL_SUCCESS) {
+                fprintf(stderr, "OpenCL error: %d\n", err);
                 exit(1);
             }
+            queue.finish();
         }
         // kernel launch end
     
