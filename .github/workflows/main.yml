@@ -119,10 +119,6 @@ jobs:
           opencl-headers \
           opencl-clhpp-headers
 
-        dpkg -L opencl-clhpp-headers || true
-        ls -la /usr/include/CL || true
-        test -f /usr/include/CL/opencl.hpp
-
     - name: Build OpenCL
       run: |
         g++ -o ${{ github.event.repository.name }}-opencl opencl_main.cpp \
