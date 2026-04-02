@@ -110,7 +110,6 @@ jobs:
       run: |
         apt-get update
         apt-get install -y ocl-icd-opencl-dev opencl-headers opencl-clhpp-headers
-        ls /usr/include/CL/
 
     - name: Build OpenCL
       run: |

@@ -8,7 +8,13 @@
 #include <string>
 #include <iostream>
 
-#include <CL/opencl.hpp>
+#if __has_include(<CL/opencl.hpp>)
+  #include <CL/opencl.hpp>
+#elif __has_include(<CL/cl2.hpp>)
+  #include <CL/cl2.hpp>
+#elif __has_include(<CL/cl.hpp>)
+  #include <CL/cl.hpp>
+#endif
 
 #include <time.h>
 #include <chrono>
