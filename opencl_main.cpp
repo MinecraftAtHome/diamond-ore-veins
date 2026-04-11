@@ -162,13 +162,6 @@ inline float rng_next_float(__private RNG *rng) {
     return xNextFloat(&rng->internal);
 }
 
-inline double rng_next_double(__private RNG *rng) {
-    int i = (int)rng_next(rng, 26);
-    int j = (int)rng_next(rng, 27);
-    u64 k = ((u64)i << 27) + (u64)j;
-    return (double)k * 1.110223e-16;
-}
-
 inline int rng_next_between_inclusive(__private RNG *rng, int i, int j) {
     return rng_next_int(rng, (u32)(j - i + 1)) + i;
 }
@@ -283,7 +276,8 @@ __kernel void seed_kernel(u64 offset, __global u64 *out, volatile __global u32 *
         (void)rng_next_int(&rng, 3);
         (void)rng_next_int(&rng, 3);
         for (int j = 0; j < 8; j++) {
-            (void)rng_next_double(&rng);
+            (void)rng_next(&rng, 26);
+            (void)rng_next(&rng, 26);
         }
     }
 
@@ -400,6 +394,9 @@ int main(int argc, char **argv) {
     program = cl::Program(ctx, sources);
     err = program.build({device});
     if (err != CL_SUCCESS) {
+        std::string buildLog = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device);
+        std::cerr << "Build Log:\n" << buildLog << std::endl;
+
         fprintf(stderr, "OpenCL error: %d\n", err);
         exit(1);
     }
