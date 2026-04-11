@@ -300,10 +300,13 @@ int main(int argc, char **argv) {
     cl_platform_id platform = 0;
     cl_int err;
 
+    int non_boinc_device;
+
     for (int i = 1; i < argc; i += 2) {
 		const char *param = argv[i];
-		// if (strcmp(param, "-d") == 0 || strcmp(param, "--device") == 0) {
-			// device = atoi(argv[i + 1]);
+		if (strcmp(param, "-d") == 0 || strcmp(param, "--device") == 0) {
+			non_boinc_device = atoi(argv[i + 1]);
+        }
 		if (strcmp(param, "-s") == 0 || strcmp(param, "--start") == 0) {
 			sscanf(argv[i + 1], "%llu", &block_min);
 		} else if (strcmp(param, "-e") == 0 || strcmp(param, "--end") == 0) {
@@ -376,7 +379,7 @@ int main(int argc, char **argv) {
             exit(1);
         }
 
-        cl::Device device = all_devices[0];
+        cl::Device device = all_devices[non_boinc_device];
     #endif
     // cudaSetDevice(device);
     // opencl setup start
