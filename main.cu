@@ -12,6 +12,7 @@
 #include <inttypes.h>
 
 #ifdef BOINC
+#include "boinc_opencl.h"
   #include "boinc_api.h"
 #if defined _WIN32 || defined _WIN64
   #include "boinc_win.h"

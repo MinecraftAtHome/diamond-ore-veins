@@ -35,6 +35,7 @@ using namespace std::chrono;
 
 #ifdef BOINC
   #include "boinc_api.h"
+  #include "boinc_opencl.h"
 #if defined _WIN32 || defined _WIN64
   #include "boinc_win.h"
 #endif
@@ -295,12 +296,15 @@ int main(int argc, char **argv) {
     uint64_t block_min = 0;
     uint64_t block_max = 0;
     uint64_t checked = 0;
-    int device = 0; 
+    cl_device_id cl_device = 0;
+    cl_platform_id platform = 0;
+    cl_int err;
+
     for (int i = 1; i < argc; i += 2) {
 		const char *param = argv[i];
-		if (strcmp(param, "-d") == 0 || strcmp(param, "--device") == 0) {
-			device = atoi(argv[i + 1]);
-		} else if (strcmp(param, "-s") == 0 || strcmp(param, "--start") == 0) {
+		// if (strcmp(param, "-d") == 0 || strcmp(param, "--device") == 0) {
+			// device = atoi(argv[i + 1]);
+		if (strcmp(param, "-s") == 0 || strcmp(param, "--start") == 0) {
 			sscanf(argv[i + 1], "%llu", &block_min);
 		} else if (strcmp(param, "-e") == 0 || strcmp(param, "--end") == 0) {
 			sscanf(argv[i + 1], "%llu", &block_max);
@@ -320,33 +324,20 @@ int main(int argc, char **argv) {
         boinc_init_options(&options);
         APP_INIT_DATA aid;
 	    boinc_get_init_data(aid);
-        if (aid.gpu_device_num >= 0) {
-            //If BOINC client provided us a device ID
-		    device = aid.gpu_device_num;
-		    fprintf(stderr,"boinc gpu %i gpuindex: %i \n", aid.gpu_device_num, device);
-		} else {
-            //If BOINC client did not provide us a device ID
-            device = -5;
-            for (int i = 1; i < argc; i += 2) {
-                //Check for a --device flag, just in case we missed it earlier, use it if it's available. For older clients primarily.
-              	if(strcmp(argv[i], "--device") == 0){
-                    sscanf(argv[i + 1], "%i", &device);
-                }
-  
-            }
-            if(device == -5){
-                //Something has gone wrong. It pulled from BOINC, got -1. No --device parameter present.
-                fprintf(stderr, "Error: No --device parameter provided! Defaulting to device 0...\n");
-                device = 0;
-            }
-		    fprintf(stderr,"stndalone gpuindex %i (aid value: %i)\n", device, aid.gpu_device_num);
-	    }   
 
+        int retval = boinc_get_opencl_ids(&cl_device, &platform);
+        if (retval != CL_SUCCESS) {
+            fprintf(stderr, "Error occurred obtaining opencl_ids from boinc: %d\n", err);
+        }
+        if (cl_device != nullptr && platform != nullptr) {
+            //If BOINC client provided us a device ID
+            fprintf(stderr, "boinc gpu %i platform: %i \n", cl_device, platform);
+        }
+        
         FILE *checkpoint_data = boinc_fopen("checkpoint.txt", "rb");
         if(!checkpoint_data){
             //No checkpoint file was found. Proceed from the beginning.
             fprintf(stderr, "No checkpoint to load\n");
-
         }
         else{
             //Load from checkpoint. You can put any data in data_store that you need to keep between runs of this program.
@@ -359,53 +350,54 @@ int main(int argc, char **argv) {
             fclose(checkpoint_data);
             boinc_end_critical_section();
         }
+        cl::Device device(cl_device);
+    #else
+        std::vector<cl::Platform> all_platforms;
+        err = cl::Platform::get(&all_platforms);
+        if (err != CL_SUCCESS) {
+            fprintf(stderr, "OpenCL error: %d\n", err);
+            exit(1);
+        }
+
+        if (all_platforms.size() < 1) {
+            fprintf(stderr, "No OpenCL platform found!\n");
+            exit(1);
+        } 
+
+        std::vector<cl::Device> all_devices;
+        err = all_platforms[0].getDevices(CL_DEVICE_TYPE_ALL, &all_devices);
+        if (err != CL_SUCCESS) {
+            fprintf(stderr, "OpenCL error: %d\n", err);
+            exit(1);
+        }
+
+        if (all_devices.size() < 1) {
+            fprintf(stderr, "No OpenCL device found!\n");
+            exit(1);
+        }
+
+        cl::Device device = all_devices[0];
     #endif
     // cudaSetDevice(device);
     // opencl setup start
+    printf("starting...\n");
     
-    cl_int err;
-
-    std::vector<cl::Platform> all_platforms;
-    err = cl::Platform::get(&all_platforms);
-    if (err != CL_SUCCESS) {
-        fprintf(stderr, "OpenCL error: %d\n", err);
-        exit(1);
-    }
-
-    if (all_platforms.size() < 1) {
-        fprintf(stderr, "No OpenCL platform found!\n");
-        exit(1);
-    } 
-
-    std::vector<cl::Device> all_devices;
-    err = all_platforms[0].getDevices(CL_DEVICE_TYPE_ALL, &all_devices);
-    if (err != CL_SUCCESS) {
-        fprintf(stderr, "OpenCL error: %d\n", err);
-        exit(1);
-    }
-
-    if (all_devices.size() < 1) {
-        fprintf(stderr, "No OpenCL device found!\n");
-        exit(1);
-    }
-
-    cl::Device cl_device;
     cl::Context ctx;
     cl::Program program;
 
-    cl_device = all_devices[device];
-    ctx = cl::Context({cl_device});
+    // cl_device = all_devices[device];
+    ctx = cl::Context({device});
 
     cl::Program::Sources sources;
     sources.push_back({kernel_source, strlen(kernel_source)});
     program = cl::Program(ctx, sources);
-    err = program.build({cl_device});
+    err = program.build({device});
     if (err != CL_SUCCESS) {
         fprintf(stderr, "OpenCL error: %d\n", err);
         exit(1);
     }
 
-    cl::CommandQueue queue(ctx, cl_device);
+    cl::CommandQueue queue(ctx, device);
 
     cl::Buffer cl_out(ctx, CL_MEM_READ_WRITE, sizeof(uint64_t) * 512);
     cl::Buffer result_count(ctx, CL_MEM_READ_WRITE, sizeof(uint32_t));
