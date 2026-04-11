@@ -300,14 +300,18 @@ int main(int argc, char **argv) {
     cl_platform_id platform = 0;
     cl_int err;
 
-    int non_boinc_device;
+    int non_boinc_device = 0;
+    int non_boinc_platform = 0;
 
     for (int i = 1; i < argc; i += 2) {
 		const char *param = argv[i];
 		if (strcmp(param, "-d") == 0 || strcmp(param, "--device") == 0) {
-			non_boinc_device = atoi(argv[i + 1]);
+			sscanf(argv[i + 1], "%llu", &non_boinc_device);
         }
-		if (strcmp(param, "-s") == 0 || strcmp(param, "--start") == 0) {
+		else if (strcmp(param, "-p") == 0 || strcmp(param, "--platform") == 0) {
+			sscanf(argv[i + 1], "%llu", &non_boinc_platform);
+        }
+		else if (strcmp(param, "-s") == 0 || strcmp(param, "--start") == 0) {
 			sscanf(argv[i + 1], "%llu", &block_min);
 		} else if (strcmp(param, "-e") == 0 || strcmp(param, "--end") == 0) {
 			sscanf(argv[i + 1], "%llu", &block_max);
@@ -368,7 +372,7 @@ int main(int argc, char **argv) {
         } 
 
         std::vector<cl::Device> all_devices;
-        err = all_platforms[0].getDevices(CL_DEVICE_TYPE_ALL, &all_devices);
+        err = all_platforms[non_boinc_platform].getDevices(CL_DEVICE_TYPE_ALL, &all_devices);
         if (err != CL_SUCCESS) {
             fprintf(stderr, "OpenCL error: %d\n", err);
             exit(1);
