@@ -82,7 +82,7 @@ jobs:
           -lOpenCL \
           -O3 \
           -pthread \
-          -march=x86-64-v2 \
+          -march=sandybridge \
           -DCL_HPP_TARGET_OPENCL_VERSION=200 \
           -DBOINC -Iboinc/ -Lboinc/lib/lin -lcuda -lboinc_api -lboinc
 

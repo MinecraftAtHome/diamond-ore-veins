@@ -5,6 +5,6 @@
 
 g++ -o cl opencl_main.cpp -lOpenCL \
         -O3 \
-        -march=native \
+        -march=sandybridge \
         -DCL_HPP_TARGET_OPENCL_VERSION=200 \
         -Iboinc/ -Lboinc/lib/lin -lcuda -lboinc_api -lboinc_opencl -lboinc
