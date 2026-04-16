@@ -307,6 +307,7 @@ int main(int argc, char **argv) {
         APP_INIT_DATA aid;
 	    boinc_get_init_data(aid);
 
+        printf("here!\n");
         int retval = boinc_get_opencl_ids(&cl_device, &platform);
         if (retval != CL_SUCCESS) {
             fprintf(stderr, "Error occurred obtaining opencl_ids from boinc: %d\n", err);
