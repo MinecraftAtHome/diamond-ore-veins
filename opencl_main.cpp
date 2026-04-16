@@ -1,45 +1,26 @@
 #define CL_TARGET_OPENCL_VERSION 300
 
-#include <cstdio>
-#include <cstdlib>
-#include <cstdint>
-#include <cstring>
-#include <vector>
-#include <string>
-#include <iostream>
-
-#if __has_include(<CL/opencl.hpp>)
-  #include <CL/opencl.hpp>
-#elif __has_include(<CL/cl2.hpp>)
-  #include <CL/cl2.hpp>
-#elif __has_include(<CL/cl.hpp>)
-  #include <CL/cl.hpp>
-#endif
-
-#include <time.h>
-#include <chrono>
-using namespace std::chrono;
+#define CL_HPP_ENABLE_EXCEPTIONS
+#define CL_HPP_TARGET_OPENCL_VERSION 120
+#define CL_HPP_MINIMUM_OPENCL_VERSION 120
 
 #ifdef __GNUC__
-
-#include <unistd.h>
-#include <sys/time.h>
 
 #endif
 
 #define __STDC_FORMAT_MACROS 1
 
-#include <stdlib.h>
-#include <stddef.h>
-#include <inttypes.h>
+#include "boinc/boinc_api.h"
+#include "boinc/cl_boinc.h"
+#include "boinc/boinc_win.h"
+#include "boinc/boinc_opencl.h"
 
-#ifdef BOINC
-  #include "boinc_api.h"
-  #include "boinc_opencl.h"
-#if defined _WIN32 || defined _WIN64
-  #include "boinc_win.h"
-#endif
-#endif
+#include "include/cl.hpp"
+
+using namespace std::chrono;
+
+
+#include <cinttypes>
 
 struct checkpoint_vars {
     unsigned long long offset;
