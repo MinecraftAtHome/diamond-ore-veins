@@ -307,7 +307,6 @@ int main(int argc, char **argv) {
         APP_INIT_DATA aid;
 	    boinc_get_init_data(aid);
 
-        printf("here!\n");
         int retval = boinc_get_opencl_ids(&cl_device, &platform);
         if (retval != CL_SUCCESS) {
             fprintf(stderr, "Error occurred obtaining opencl_ids from boinc: %d\n", retval);
@@ -316,9 +315,8 @@ int main(int argc, char **argv) {
         if (cl_device != nullptr && platform != nullptr) {
             //If BOINC client provided us a device ID
             fprintf(stderr, "boinc gpu %i platform: %i \n", cl_device, platform);
-            exit(1);
         }
-        
+
         FILE *checkpoint_data = boinc_fopen("checkpoint.txt", "rb");
         if(!checkpoint_data){
             //No checkpoint file was found. Proceed from the beginning.

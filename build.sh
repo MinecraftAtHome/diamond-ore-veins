@@ -17,10 +17,9 @@
 #   -L. -lOpenCL \
 
 x86_64-w64-mingw32-g++ -o windows_cl.exe opencl_main.cpp \
-  -D_WIN64 -DWIN64 -D_WIN32 -DWIN32 \
+  -D_WIN64 -DWIN64 -D_WIN32 -DWIN32 -DBOINC \
   -Iboinc \
   -Lboinc/lib/win \
   -static-libgcc -static-libstdc++ \
-  -Wl,--stack,0x800000 \
-  -Wl,--start-group -lboinc_api -lboinc_opencl -lboinc -Wl,--end-group \
-  -Lcl -lOpenCL
+  -lboinc_api -lboinc_opencl -lboinc \
+  -Lcl -lOpenCL \
