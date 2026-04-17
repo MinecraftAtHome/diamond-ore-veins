@@ -310,11 +310,13 @@ int main(int argc, char **argv) {
         printf("here!\n");
         int retval = boinc_get_opencl_ids(&cl_device, &platform);
         if (retval != CL_SUCCESS) {
-            fprintf(stderr, "Error occurred obtaining opencl_ids from boinc: %d\n", err);
+            fprintf(stderr, "Error occurred obtaining opencl_ids from boinc: %d\n", retval);
+            exit(1);
         }
         if (cl_device != nullptr && platform != nullptr) {
             //If BOINC client provided us a device ID
             fprintf(stderr, "boinc gpu %i platform: %i \n", cl_device, platform);
+            exit(1);
         }
         
         FILE *checkpoint_data = boinc_fopen("checkpoint.txt", "rb");
