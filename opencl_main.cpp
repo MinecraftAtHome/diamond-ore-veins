@@ -403,7 +403,7 @@ int main(int argc, char **argv) {
     seed_kernel.setArg(2, result_count);
     // opencl setup end
 
-    cl::NDRange global_size(1ull << 26);
+    cl::NDRange global_size(1ull << 30);
     cl::NDRange local_size(256);
     
     auto start = high_resolution_clock::now();
@@ -411,8 +411,8 @@ int main(int argc, char **argv) {
     FILE* seedsout = fopen("seeds.txt", "a");
     for (uint64_t s = (uint64_t)block_min + offsetStart; s < (uint64_t)block_max; s++) {
         // kernel launch start
-        for (uint64_t i = 0; i < 64; i++) {
-            uint64_t o = (s * (1ull << 32)) + (i * (1ull << 26));
+        for (uint64_t i = 0; i < 4; i++) {
+            uint64_t o = (s * (1ull << 32)) + (i * (1ull << 30));
             seed_kernel.setArg(0, o);
             err = queue.enqueueNDRangeKernel(seed_kernel, cl::NullRange, global_size, local_size);
             if (err != CL_SUCCESS) {
