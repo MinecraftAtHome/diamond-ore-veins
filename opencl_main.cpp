@@ -10,10 +10,10 @@
 
 #define __STDC_FORMAT_MACROS 1
 
-#include "boinc/boinc_api.h"
-#include "boinc/cl_boinc.h"
-#include "boinc/boinc_win.h"
-#include "boinc/boinc_opencl.h"
+#include "new_boinc_headers/boinc_api.h"
+#include "new_boinc_headers/cl_boinc.h"
+#include "new_boinc_headers/boinc_win.h"
+#include "new_boinc_headers/boinc_opencl.h"
 
 #include "include/cl.hpp"
 
@@ -314,7 +314,7 @@ int main(int argc, char **argv) {
         }
         if (cl_device != nullptr && platform != nullptr) {
             //If BOINC client provided us a device ID
-            fprintf(stderr, "boinc gpu %i platform: %i \n", cl_device, platform);
+            fprintf(stderr, "boinc gpu %p platform: %p \n", cl_device, platform);
         }
 
         FILE *checkpoint_data = boinc_fopen("checkpoint.txt", "rb");
