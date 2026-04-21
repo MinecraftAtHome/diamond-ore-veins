@@ -5,7 +5,9 @@ on: [push]
 jobs:
   windows_opencl:
     name: opencl/release/windows
-    runs-on: [ubuntu-22.04]
+    runs-on: ubuntu-latest
+    container:
+      image: debian:12
     steps:
     - uses: actions/checkout@v4
 
