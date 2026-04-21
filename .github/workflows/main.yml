@@ -18,6 +18,8 @@ jobs:
       run: |
         x86_64-w64-mingw32-dlltool -d cl/opencl.def -D OpenCL.dll -l cl/OpenCL.lib
 
+        x86_64-w64-mingw32-g++ --version
+
         x86_64-w64-mingw32-g++ -o ${{ github.event.repository.name }}-opencl.exe opencl_main.cpp \
           -D_WIN64 -DWIN64 -D_WIN32 -DWIN32 -DBOINC \
           -Iboinc \
