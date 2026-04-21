@@ -287,7 +287,7 @@ typedef LPCSTR PCTSTR, LPCTSTR, PCUTSTR, LPCUTSTR;
 #include <cstring>
 #include <ctime>
 #include <cfloat>
-#include <locale>
+// #include <locale>
 #else
 #include <assert.h>
 #include <ctype.h>
