@@ -535,7 +535,7 @@ int main(int argc, char **argv) {
             (void)(fread(&data_store, sizeof(data_store), 1, checkpoint_data));
             offsetStart = data_store.offset;
             elapsed_chkpoint = data_store.elapsed_chkpoint;
-            fprintf(stderr, "Checkpoint loaded, task time %d s, seed pos: %llu\n", elapsed_chkpoint, offsetStart);
+            fprintf(stderr, "Checkpoint loaded, task time %d ms, seed pos: %llu\n", elapsed_chkpoint, offsetStart);
             fclose(checkpoint_data);
             boinc_end_critical_section();
         }
@@ -545,7 +545,7 @@ int main(int argc, char **argv) {
     auto start = high_resolution_clock::now();
 	printf("starting...\n");
     uint64_t checkpointTemp = 0;
-    FILE* seedsout = fopen("seeds.txt", "w+");
+    FILE* seedsout = fopen("seeds.txt", "a");
     for (uint64_t s = (uint64_t)block_min + offsetStart; s < (uint64_t)block_max; s++) {
         //Call GPU kernel
 

@@ -32,7 +32,6 @@ jobs:
         xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\visual_studio_integration-windows-x86_64-12.6.77-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6" /E /I /H /Y
         xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\cuda_nvprof-windows-x86_64-12.6.80-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6" /E /I /H /Y
         xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\cuda_cccl-windows-x86_64-12.6.77-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6" /E /I /H /Y
-    # Default installation path for CUDA Toolkit is C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6
     - name: Add Path
       run: |
         echo "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.6\\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
@@ -48,6 +47,7 @@ jobs:
       with:
        name: ${{ github.event.repository.name }}-cuda-win
        path: .\${{ github.event.repository.name }}*.exe
+        
   linux_cuda:
     name: cuda/release/linux
     runs-on: [ubuntu-latest]
@@ -64,3 +64,52 @@ jobs:
       with:
        name: ${{ github.event.repository.name }}-cuda-lin
        path: ./${{ github.event.repository.name }}-cuda*
+
+  linux_opencl:
+    name: opencl/release/linux
+    runs-on: [ubuntu-latest]
+    container: nvidia/cuda:12.6.3-devel-ubuntu20.04
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install OpenCL dev packages
+      run: |
+        apt-get update
+        apt-get install -y ocl-icd-opencl-dev opencl-headers opencl-clhpp-headers
+
+    - name: Build OpenCL
+      run: |
+        g++ -o ${{ github.event.repository.name }}-opencl opencl_main.cpp \
+          -lOpenCL \
+          -O3 \
+          -pthread \
+          -march=native \
+          -DCL_HPP_TARGET_OPENCL_VERSION=300 \
+          -DBOINC -Iboinc/ -Lboinc/lib/lin -lcuda -lboinc_api -lboinc
+
+    - uses: actions/upload-artifact@v4
+      with:
+       name: ${{ github.event.repository.name }}-opencl-lin
+       path: ./${{ github.event.repository.name }}-opencl*
+
+  windows_opencl:
+    name: opencl/release/windows
+    runs-on: [windows-latest]
+    steps:
+    - uses: actions/checkout@v2
+    - uses: msys2/setup-msys2@v2
+    - name: setup
+      run: |
+       msys2 -c 'wget https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/files/1406216/lightOCLSDK.zip -O amdocl.zip'
+       jar xf amdocl.zip 
+    - name: build
+      run: |
+       echo "D:\a\diamond-ore-veins\diamond-ore-veins\lib\x86_64\;D:\a\diamond-ore-veins\diamond-ore-veins\include\" >> $GITHUB_PATH
+       g++ -w -static -m64 -Ofast -lstdc++ .\opencl_main.cpp -o ${{ github.event.repository.name }}-opencl.exe -LD:\a\diamond-ore-veins\diamond-ore-veins\lib\x86_64\ -ID:\a\diamond-ore-veins\diamond-ore-veins\include\ -ID:\a\diamond-ore-veins\diamond-ore-veins\boinc\ -ID:\a\diamond-ore-veins\diamond-ore-veins\boinc\win\ -LD:\a\diamond-ore-veins\diamond-ore-veins\boinc\lib\win\ -lboinc_api -lboinc -lboinc_opencl -lOpenCL -D_WIN64 -DWIN64 -D_WIN32 -DWIN32 -DCL_HPP_ENABLE_EXCEPTIONS
+
+       dir
+       
+    - uses: actions/upload-artifact@v4
+      with:
+       name: ${{ github.event.repository.name }}-opencl-win
+       path: ./${{ github.event.repository.name }}-opencl*.exe
