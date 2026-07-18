@@ -30,6 +30,16 @@ inline void gpuAssert(cudaError_t code, const char *file, int line) {
 ///                      Compiler and Platform Features
 ///=============================================================================
 
+struct Result {
+    uint64_t world_seed;
+    int32_t x;
+    int32_t z;
+};
+
+#define NUM_RESULTS 5012
+__managed__ Result results[NUM_RESULTS];
+__managed__ unsigned long long int result_count = 0;
+
 typedef int8_t      i8;
 typedef uint8_t     u8;
 typedef int16_t     i16;
@@ -74,152 +84,34 @@ __device__ __host__ static inline uint32_t BSWAP32(uint32_t x) {
 
 #endif
 
-/// imitate amd64/x64 rotate instructions
 
-__device__ __host__ static inline ATTR(const, always_inline, artificial)
-uint64_t rotl64(uint64_t x, uint8_t b)
+constexpr uint64_t MOD60 = 1ull << 60;
+constexpr uint64_t MASK60 = MOD60 - 1;
+
+#define CUDA_FUNCTION __device__ __forceinline__
+#define XRSR_MIX1          0xbf58476d1ce4e5b9
+#define XRSR_MIX2          0x94d049bb133111eb
+#define XRSR_MIX1_INVERSE  0x96de1b173f119089
+#define XRSR_MIX2_INVERSE  0x319642b2d24d8ec3
+#define XRSR_SILVER_RATIO  0x6a09e667f3bcc909
+#define XRSR_GOLDEN_RATIO  0x9e3779b97f4a7c15
+
+CUDA_FUNCTION uint64_t mix64(uint64_t a) {
+	a = (a ^ a >> 30) * XRSR_MIX1;
+	a = (a ^ a >> 27) * XRSR_MIX2;
+	return a ^ a >> 31;
+}
+
+CUDA_FUNCTION uint64_t rotl64(uint64_t x, uint8_t b)
 {
     return (x << b) | (x >> (64-b));
 }
 
-__device__ __host__ static inline ATTR(const, always_inline, artificial)
-uint32_t rotr32(uint32_t a, uint8_t b)
-{
-    return (a >> b) | (a << (32-b));
-}
-
-/// integer floor divide
-__device__ __host__ static inline ATTR(const, always_inline)
-int32_t floordiv(int32_t a, int32_t b)
-{
-    int32_t q = a / b;
-    int32_t r = a % b;
-    return q - ((a ^ b) < 0 && !!r);
-}
-
-///=============================================================================
-///                    C implementation of Java Random
-///=============================================================================
-
-__device__ __host__ static inline void setSeed(uint64_t *seed, uint64_t value)
-{
-    *seed = (value ^ 0x5deece66d) & ((1ULL << 48) - 1);
-}
-
-__device__ __host__ static inline int next(uint64_t *seed, const int bits)
-{
-    *seed = (*seed * 0x5deece66d + 0xb) & ((1ULL << 48) - 1);
-    return (int) ((int64_t)*seed >> (48 - bits));
-}
-
-__device__ __host__ static inline int nextInt(uint64_t *seed, const int n)
-{
-    int bits, val;
-    const int m = n - 1;
-
-    if ((m & n) == 0) {
-        uint64_t x = n * (uint64_t)next(seed, 31);
-        return (int) ((int64_t) x >> 31);
-    }
-
-    do {
-        bits = next(seed, 31);
-        val = bits % n;
-    }
-    while (bits - val + m < 0);
-    return val;
-}
-
-__device__ __host__ static inline uint64_t nextLong(uint64_t *seed)
-{
-    return ((uint64_t) next(seed, 32) << 32) + next(seed, 32);
-}
-
-__device__ __host__ static inline float nextFloat(uint64_t *seed)
-{
-    return next(seed, 24) / (float) (1 << 24);
-}
-
-__device__ __host__ static inline double nextDouble(uint64_t *seed)
-{
-    uint64_t x = (uint64_t)next(seed, 26);
-    x <<= 27;
-    x += next(seed, 27);
-    return (int64_t) x / (double) (1ULL << 53);
-}
-
-/* A macro to generate the ideal assembly for X = nextInt(*S, 24)
- * This is a macro and not an inline function, as many compilers can make use
- * of the additional optimisation passes for the surrounding code.
- */
-#define JAVA_NEXT_INT24(S,X)                \
-    do {                                    \
-        uint64_t a = (1ULL << 48) - 1;      \
-        uint64_t c = 0x5deece66dULL * (S);  \
-        c += 11; a &= c;                    \
-        (S) = a;                            \
-        a = (uint64_t) ((int64_t)a >> 17);  \
-        c = 0xaaaaaaab * a;                 \
-        c = (uint64_t) ((int64_t)c >> 36);  \
-        (X) = (int)a - (int)(c << 3) * 3;   \
-    } while (0)
-
-
-/* Jumps forwards in the random number sequence by simulating 'n' calls to next.
- */
-__device__ __host__ static inline void skipNextN(uint64_t *seed, uint64_t n)
-{
-    uint64_t m = 1;
-    uint64_t a = 0;
-    uint64_t im = 0x5deece66dULL;
-    uint64_t ia = 0xb;
-    uint64_t k;
-
-    for (k = n; k; k >>= 1)
-    {
-        if (k & 1)
-        {
-            m *= im;
-            a = im * a + ia;
-        }
-        ia = (im + 1) * ia;
-        im *= im;
-    }
-
-    *seed = *seed * m + a;
-    *seed &= 0xffffffffffffULL;
-}
-
-
-///=============================================================================
-///                               Xoroshiro 128
-///=============================================================================
-
-STRUCT(Xoroshiro)
-{
+typedef struct {
     uint64_t lo, hi;
-};
+} Xoroshiro;
 
-__device__ __host__ static inline void xSetSeed(Xoroshiro *xr, uint64_t value)
-{
-    const uint64_t XL = 0x9e3779b97f4a7c15ULL;
-    const uint64_t XH = 0x6a09e667f3bcc909ULL;
-    const uint64_t A = 0xbf58476d1ce4e5b9ULL;
-    const uint64_t B = 0x94d049bb133111ebULL;
-    uint64_t l = value ^ XH;
-    uint64_t h = l + XL;
-    l = (l ^ (l >> 30)) * A;
-    h = (h ^ (h >> 30)) * A;
-    l = (l ^ (l >> 27)) * B;
-    h = (h ^ (h >> 27)) * B;
-    l = l ^ (l >> 31);
-    h = h ^ (h >> 31);
-    xr->lo = l;
-    xr->hi = h;
-}
-
-__device__ __host__ static inline uint64_t xNextLong(Xoroshiro *xr)
-{
+CUDA_FUNCTION static uint64_t xNextLong(Xoroshiro *xr) {
     uint64_t l = xr->lo;
     uint64_t h = xr->hi;
     uint64_t n = rotl64(l + h, 17) + l;
@@ -229,103 +121,65 @@ __device__ __host__ static inline uint64_t xNextLong(Xoroshiro *xr)
     return n;
 }
 
-__device__ __host__ static inline int xNextInt(Xoroshiro *xr, uint32_t n)
-{
-    uint64_t r = (xNextLong(xr) & 0xFFFFFFFF) * n;
-    if ((uint32_t)r < n)
-    {
-        while ((uint32_t)r < (~n + 1) % n)
-        {
-            r = (xNextLong(xr) & 0xFFFFFFFF) * n;
-        }
-    }
-    return r >> 32;
-}
-
-__device__ __host__ static inline double xNextDouble(Xoroshiro *xr)
-{
-    return (xNextLong(xr) >> (64-53)) * 1.1102230246251565E-16;
-}
-
-__device__ __host__ static inline float xNextFloat(Xoroshiro *xr)
-{
+CUDA_FUNCTION static float xNextFloat(Xoroshiro *xr) {
     return (xNextLong(xr) >> (64-24)) * 5.9604645E-8F;
 }
 
-__device__ __host__ static inline void xSkipN(Xoroshiro *xr, int count)
-{
-    while (count --> 0)
-        xNextLong(xr);
-}
-
-__device__ __host__ static inline uint64_t xNextLongJ(Xoroshiro *xr)
+CUDA_FUNCTION static uint64_t xNextLongJ(Xoroshiro *xr)
 {
     int32_t a = xNextLong(xr) >> 32;
     int32_t b = xNextLong(xr) >> 32;
     return ((uint64_t)a << 32) + b;
 }
 
-__device__ __host__ static inline int xNextIntJ(Xoroshiro *xr, uint32_t n)
-{
-    int bits, val;
-    const int m = n - 1;
+CUDA_FUNCTION float dot(float a, float b, float c, float d) {
+    return __fmaf_ru(b, d, a * c);
+}
 
-    if ((m & n) == 0) {
-        uint64_t x = n * (xNextLong(xr) >> 33);
-        return (int) ((int64_t) x >> 31);
-    }
+CUDA_FUNCTION float lensq(float a, float b) {
+    return __fmaf_ru(b, b, a * a);
+}
 
-    do {
-        bits = (xNextLong(xr) >> 33);
-        val = bits % n;
-    }
-    while (bits - val + m < 0);
-    return val;
+template<typename T>
+CUDA_FUNCTION void swap(T &a, T &b) {
+    T tmp = a;
+    a = b;
+    b = tmp;
+}
+
+CUDA_FUNCTION uint64_t modinv64(uint64_t value) {
+    uint64_t x = ((((value << 1) ^ value) & 4) << 1) ^ value;
+    x += x - value * x * x;
+    x += x - value * x * x;
+    x += x - value * x * x;
+    x += x - value * x * x;
+    return x;
 }
 
 typedef struct {
     Xoroshiro internal;
-    int num_calls;
-} RNG; 
+} RNG; // Bruh I really didn't want to have to do this.
 
-#define XRSR_MIX1          0xbf58476d1ce4e5b9
-#define XRSR_MIX2          0x94d049bb133111eb
-#define XRSR_MIX1_INVERSE  0x96de1b173f119089
-#define XRSR_MIX2_INVERSE  0x319642b2d24d8ec3
-#define XRSR_SILVER_RATIO  0x6a09e667f3bcc909
-#define XRSR_GOLDEN_RATIO  0x9e3779b97f4a7c15
-
-__device__ __host__   uint64_t mix64(uint64_t a) {
-	a = (a ^ a >> 30) * XRSR_MIX1;
-	a = (a ^ a >> 27) * XRSR_MIX2;
-	return a ^ a >> 31;
+CUDA_FUNCTION RNG rng_new() {
+    RNG rng;
+    rng.internal = {0};
+    return rng;
 }
 
-__device__ __host__  RNG rng_new() {
-    return {{0}};
-}
-
-__device__ __host__  static void rng_set_seed(RNG *rng, uint64_t seed) {
+CUDA_FUNCTION static void rng_set_seed(RNG *rng, uint64_t seed) {
     seed ^= XRSR_SILVER_RATIO;
     rng->internal.lo = mix64(seed);
     rng->internal.hi = mix64(seed + XRSR_GOLDEN_RATIO);
 }
 
-__device__ __host__  static void rng_set_internal(RNG *rng, uint64_t lo, uint64_t hi) {
-    rng->internal.lo = lo;
-    rng->internal.hi = hi;
-}
-
-__device__ __host__  static uint64_t rng_next(RNG *rng, int32_t bits) {
-    rng->num_calls++;
+CUDA_FUNCTION static uint64_t rng_next(RNG *rng, int32_t bits) {
     return xNextLong(&rng->internal) >> (64 - bits);
 }
 
-__device__ __host__  static int32_t rng_next_int(RNG *rng, uint32_t bound) {
+CUDA_FUNCTION static int32_t rng_next_int(RNG *rng, uint32_t bound) {
     uint32_t r = rng_next(rng, 31);
     uint32_t m = bound - 1;
     if ((bound & m) == 0) {
-        // (int)((long)p_188504_ * (long)this.next(31) >> 31);
         r = (uint32_t)((uint64_t)bound * (uint64_t)r >> 31);
     }
     else {
@@ -334,69 +188,54 @@ __device__ __host__  static int32_t rng_next_int(RNG *rng, uint32_t bound) {
     return r;
 }
 
-__device__ __host__  static float rng_next_float(RNG *rng) {
+CUDA_FUNCTION static float rng_next_float(RNG *rng) {
     return xNextFloat(&rng->internal);
 }
 
-__device__ __host__  static double rng_next_double(RNG *rng) { // whoops!
-    int32_t i = rng_next(rng, 26);
-    int32_t j = rng_next(rng, 27);
-    uint64_t k = ((uint64_t)i << 27) + (uint64_t)j;
-    return (double)k * (double)1.110223E-16F;
-}
-
-__device__ __host__  static int rng_next_between_inclusive(RNG *rng, int i, int j) {
+CUDA_FUNCTION static int rng_next_between_inclusive(RNG *rng, int i, int j) {
     return rng_next_int(rng, j - i + 1) + i;
 }
 
-__device__ __host__  static uint64_t rng_next_long(RNG *rng) {
+CUDA_FUNCTION static uint64_t rng_next_long(RNG *rng) {
     int32_t i = rng_next(rng, 32);
     int32_t j = rng_next(rng, 32);
     uint64_t k = (uint64_t)i << 32;
     return k + (uint64_t)j;
 }
 
-__device__ __host__  static uint64_t rng_set_feature_seed(RNG *rng, uint64_t p_190065_, int32_t p_190066_, int32_t p_190067_) {
+CUDA_FUNCTION static uint64_t rng_set_feature_seed(RNG *rng, uint64_t p_190065_, int32_t p_190066_, int32_t p_190067_) {
     uint64_t i = p_190065_ + (uint64_t)p_190066_ + (uint64_t)(10000 * p_190067_);
-    //printf("Salt = %" PRIu64 "\n", (uint64_t)p_190066_ + (uint64_t)(10000 * p_190067_));
     rng_set_seed(rng, i);
     return i;
 }
 
-__device__ __host__  uint64_t reverse_decoration_seed(uint64_t decorator_seed, int index, int step) {
+CUDA_FUNCTION uint64_t reverse_decoration_seed(uint64_t decorator_seed, int index, int step) {
     return decorator_seed - (uint64_t)index - 10000L * (uint64_t)step;
 }
 
-__device__ __host__  static uint64_t rng_set_decoration_seed(RNG *rng, uint64_t world_seed, int32_t x, int32_t z) {
+CUDA_FUNCTION static uint64_t rng_set_decoration_seed(RNG *rng, uint64_t world_seed, int32_t x, int32_t z) {
     rng_set_seed(rng, world_seed);
 
     uint64_t a = rng_next_long(rng) | 1L;
     uint64_t b = rng_next_long(rng) | 1L;
 
-    // printf("the k to recover = %" PRIu64 "\n", (a * (uint64_t)x + b * (uint64_t)z));
     uint64_t k = (a * (uint64_t)x + b * (uint64_t)z) ^ world_seed;
-    // printf("real k = %" PRIu64 "\n", k);
-    // printf("invert k = %" PRIu64 "\n", k ^ world_seed);
     rng_set_seed(rng, k);
     return k;
 }
 
-#define CUDA_FUNCTION __device__ __host__
-#define NUM_RESULTS 5012
-__managed__ uint64_t results[NUM_RESULTS];
-__managed__ unsigned long long int result_count = 0;
+constexpr int32_t THRESH = 16;
 
-typedef struct {
-    int dx, dz, height;
-    bool is_valid;
+typedef __align__(16) struct {
+    int32_t dx, dz, height;
 } Offset;
 
-CUDA_FUNCTION Offset offset_new(int dx, int dz, int height) {
-    return {dx, dz, height, true};
-}
-
-CUDA_FUNCTION Offset offset_invalid_new() {
-    return {-1, -1, -1, false};
+constexpr CUDA_FUNCTION bool close_enough(const Offset& o, const Offset &ref, int32_t thresh = THRESH) {
+    int dx = o.dx - ref.dx;
+    int dy = o.height - ref.height;
+    int dz = o.dz - ref.dz;
+    return (o.height > -55) && (o.height < -6) &&
+           (dx*dx + dy*dy + dz*dz <= thresh);
 }
 
 CUDA_FUNCTION Offset get_position_standard(RNG *rng) {
@@ -411,124 +250,193 @@ CUDA_FUNCTION Offset get_position_standard(RNG *rng) {
     int i1 = (j-i) - l;
     int height = i + rng_next_between_inclusive(rng, 0, i1) + rng_next_between_inclusive(rng, 0, l);
 
-    return offset_new(dx, dz, height);
-}
-
-CUDA_FUNCTION Offset get_small_diamond_position(RNG *rng, uint64_t chunk_seed) {
-    // uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 18, 6);
-    // (void)feature_seed;
-    
-    return get_position_standard(rng);
-}
-
-CUDA_FUNCTION Offset get_medium_diamond_position(RNG *rng, uint64_t chunk_seed) {
-    // uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 19, 6);
-    // (void)feature_seed;
-    
-    int dx = rng_next_int(rng, 16);
-    int dz = rng_next_int(rng, 16);
-
-    int i = -64;
-    int j = -4;
-
-    int height = rng_next_between_inclusive(rng, i, j);
-
-    return offset_new(dx, dz, height);
+    return {dx, dz, height};
 }
 
 CUDA_FUNCTION bool get_large_diamond_position(RNG *rng, uint64_t chunk_seed) {
     (void)rng_set_feature_seed(rng, chunk_seed, 20, 6);
-    return (rng_next_float(rng) < 1.0F / (float)9.0);
-    // idiotic branching... how stupid
-    // if (!(rng_next_float(rng) < 1.0F / (float)9.0)) {
-        // return offset_invalid_new();
-    // }
-    // return get_position_standard(rng);
+    return (rng_next_float(rng) < 0.111111f);
 }
 
-CUDA_FUNCTION Offset get_buried_diamond_position(RNG *rng, uint64_t chunk_seed) {
-    return get_position_standard(rng);
+CUDA_FUNCTION size_t count_veins(RNG *rng, const Offset &cmp, uint64_t chunk_seed) {
+    if (!get_large_diamond_position(rng, chunk_seed)) {
+        return 0;
+    }
+    Offset ref = get_position_standard(rng); // large
+    if (!close_enough(cmp, ref)) {
+        return 0;
+    }    
+    return 1;
 }
 
-CUDA_FUNCTION float offset_distance_squared(const Offset *a, const Offset *b) {
-    int x1 = a->dx;
-    int y1 = a->height;
-    int z1 = a->dz;
+/*
+all oriented north (-Z)
 
-    int x2 = b->dx;
-    int y2 = b->height;
-    int z2 = b->dz;
+0 = top left
+1 = top right
+2 = bottom right
+3 = bottom left
+*/
 
-    return ((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1) + (z2 - z1) * (z2 - z1));
-}
+__constant__ int32_t offsets[4][3][2] = {
+    {{0, -16}, {-16, -16}, {-16, 0}}, // 0
+    {{0, -16}, {16, -16}, {16, 0}}, // 1
+    {{0, 16}, {16, 16}, {16, 0}}, // 2
+    {{0, 16}, {-16, 16}, {-16, 0}}, // 3
+};
 
-CUDA_FUNCTION bool in_range(int y) {
-    return (y > -55) && (y < -6);
-}
+__constant__ int32_t cmp_offsets[4][3][2] = {
+    {{0, 16}, {16, 16}, {16, 0}},
+    {{16, 16}, {0, 16}, {0, 0}},
+    {{16, 0}, {0, 0}, {0, 16}},
+    {{0, 0}, {16, 0}, {16, 16}}
+};
 
-CUDA_FUNCTION bool get_small_diamond_offsets(RNG *rng, uint64_t chunk_seed, Offset *offsets, size_t *sz) {
-    uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 18, 6);
-    Offset o = get_small_diamond_position(rng, chunk_seed);
-    // which idiot wrote this?? possible wasteful memory writes... (looks like it might not be that impactful)
-    offsets[*sz] = o;
-    (*sz)++;
-    return in_range(o.height);
-}
-
-CUDA_FUNCTION bool get_medium_diamond_offsets(RNG *rng, uint64_t chunk_seed, Offset *offsets, size_t *sz) {
-    uint64_t feature_seed = rng_set_feature_seed(rng, chunk_seed, 19, 6);
-    Offset o = get_medium_diamond_position(rng, chunk_seed);
-    offsets[*sz] = o;
-    (*sz)++;
-    return in_range(o.height);
-}
-
-#define THRESH 26.0f
-
-__global__ void kernel(uint64_t s, uint64_t *out) {
-    uint64_t chunk_seed = blockDim.x * blockIdx.x + threadIdx.x + s;
-
+CUDA_FUNCTION void check(uint64_t world_seed, int32_t x, int32_t z, int32_t rotation, int32_t ylevel, Result *out) {
+    size_t count = 0;
     RNG rng = rng_new();
     
-    if (!get_large_diamond_position(&rng, chunk_seed)) {
-        return;
-    }
-
-    Offset ref = get_position_standard(&rng); // large
-
-    Offset o;
-
-    (void)rng_set_feature_seed(&rng, chunk_seed, 18, 6);
-    o = get_small_diamond_position(&rng, chunk_seed);
-    if (!in_range(o.height) || offset_distance_squared(&ref, &o) > THRESH) {
-        return;
-    }
-
-    (void)rng_set_feature_seed(&rng, chunk_seed, 19, 6);
-    o = get_medium_diamond_position(&rng, chunk_seed);
-    if (!in_range(o.height) || offset_distance_squared(&ref, &o) > THRESH) {
-        return;
-    }
-
-    (void)rng_set_feature_seed(&rng, chunk_seed, 21, 6);
     #pragma unroll
-    for (int k = 0; k < 4; k++) {
-        o = get_buried_diamond_position(&rng, chunk_seed);
-        if (!in_range(o.height) || offset_distance_squared(&ref, &o) > THRESH) {
-            return;
-        }
+    for (int32_t i = 0; i < 3; i++) {
+        int32_t *offset = offsets[rotation][i];
+        int32_t *cmp_offset = cmp_offsets[rotation][i];
 
-        rng_next_float(&rng);
-        rng_next_int(&rng, 3);
-        rng_next_int(&rng, 3);
-        #pragma unroll
-        for (int j = 0; j < 8; j++) {
-            rng_next_double(&rng);
-        }
+        Offset cmp = {cmp_offset[0], cmp_offset[1], ylevel};
+        uint64_t c = rng_set_decoration_seed(&rng, world_seed, x + offset[0], z + offset[1]);
+        count += count_veins(&rng, cmp, c);
+    }
+    // Offset cmp = {0, 16, -50};
+    // uint64_t c1 = rng_set_decoration_seed(&rng, world_seed, x, z - 16);
+    // count += count_veins(&rng, cmp, c1);
+
+    // cmp = {16, 16, -50};
+    // uint64_t c2 = rng_set_decoration_seed(&rng, world_seed, x - 16, z - 16);
+    // count += count_veins(&rng, cmp, c2);
+        
+    // cmp = {16, 0, -50};
+    // uint64_t c3 = rng_set_decoration_seed(&rng, world_seed, x - 16, z);
+    // count += count_veins(&rng, cmp, c3);
+
+    if (count >= 2) {
+        // printf("candidate: %ld /tp @a %d -50 %d\n", world_seed, x, z);
+        out[atomicAdd(&result_count, 1ull)] = {
+            .world_seed = world_seed,
+            .x = x,
+            .z = z,
+        };
+    }
+}
+
+#define hi32(x) (int32_t)(x >> 32)
+
+__global__ void kernel(uint64_t s, uint64_t chunk_seed, int32_t rotation, int32_t ylevel, Result *out) {
+    uint64_t upper60 = (uint64_t)threadIdx.x + (uint64_t)blockDim.x * (uint64_t)blockIdx.x + s;
+    uint64_t world_seed = (upper60 << 4) | (chunk_seed & 0xF);
+
+    uint64_t target = ((chunk_seed ^ world_seed) >> 4) & MASK60;
+
+    Xoroshiro xr = {mix64(world_seed ^ XRSR_SILVER_RATIO), mix64((world_seed ^ XRSR_SILVER_RATIO) + XRSR_GOLDEN_RATIO)};
+    uint64_t a = (xNextLongJ(&xr) | 1L);
+    uint64_t b = (xNextLongJ(&xr) | 1L);
+
+    int64_t binv = modinv64(b);
+    int64_t new_z_center = ((binv * target) & MASK60);
+
+    int64_t c = (-a * binv);
+    int64_t a0 = 0;   
+    int64_t a1 = MOD60;
+    int64_t b0 = 1;      
+    int64_t b1 = c << 4 >> 4;
+    
+    #pragma unroll
+    for (int i = 0; i < 12; i++) {
+        int32_t hi32_b0 = hi32(b0);
+        int32_t hi32_b1 = hi32(b1);
+        float d0 = dot(hi32(a0), hi32(a1), hi32_b0, hi32_b1);
+        float d1 = lensq(hi32_b0, hi32_b1);
+        int32_t q = __float2int_rn(d0 / d1);
+        a0 -= q * b0;
+        a1 -= q * b1;
+        swap(a0, b0);
+        swap(a1, b1);
     }
 
-    out[atomicAdd(&result_count, 1ull)] = chunk_seed;
+    int32_t lx = ((__int128)(-a0) * -new_z_center + (1ull << 59)) >> 60;
+    int32_t lz = ((__int128)(+b0) * -new_z_center + (1ull << 59)) >> 60;
+
+    int32_t x = lx * b0 + lz * a0;
+    int32_t z = lx * b1 + lz * a1 + new_z_center;
+
+    uint64_t result = (a * x + b * z) & MASK60;
+    if (!(result ^ target) && x < 1875000 && x > -1875000 && z < 1875000 && z > -1875000) {
+        check(world_seed, x << 4, z << 4, rotation, ylevel, out);
+        // printf("%lu %d %d\n", world_seed, x << 4, z << 4);
+    }
 }
+
+static int32_t ylevels[] = {
+    -50, 
+    -48, 
+    -35, 
+    -50, 
+    -52, 
+    -50, 
+    -51,
+    -45, 
+    -50, 
+    -50, 
+    -40, 
+    -39, 
+    -46, 
+    -49, 
+    -50, 
+    -41
+};
+
+static int32_t rotations[] = {
+    0, 
+    0, 
+    3, 
+    1, 
+    3, 
+    0, 
+    0, 
+    2, 
+    0, 
+    2, 
+    0, 
+    3, 
+    2, 
+    0, 
+    0, 
+    0
+};
+
+static int64_t chunk_seeds[] = {
+    -6891848762888992262ll, 
+    1403213307165593138ll, 
+    2795686666713625419ll, 
+    2619454913059109429ll, 
+    3857584051490099048ll, 
+    7827231599277226793ll, 
+    8088936849810898404ll, 
+    -5114902250324241924ll, 
+    -3447419567763214185ll, 
+    -2386500757356489706ll, 
+    -74704388922236045ll, 
+    -2839028705456860351ll,
+    3953372026202530989ll, 
+    1118422581247290462ll, 
+    -8968695556427997921ll, 
+    9176787649488563472ll
+};
+
+
+#define SIZEOF(x) (sizeof((x)) / sizeof(*(x)))
+ 
+static_assert(SIZEOF(rotations) == 16);
+static_assert(SIZEOF(chunk_seeds) == 16);
+static_assert(SIZEOF(ylevels) == 16);
 
 #include <time.h>
 #include <chrono>
@@ -551,7 +459,6 @@ struct checkpoint_vars {
 };
 
 uint64_t elapsed_chkpoint = 0;
-
 
 int main(int argc, char **argv) {
 
@@ -641,7 +548,16 @@ int main(int argc, char **argv) {
     FILE* seedsout = fopen("seeds.txt", "w+");
     for (uint64_t s = (uint64_t)block_min + offsetStart; s < (uint64_t)block_max; s++) {
         //Call GPU kernel
-        kernel<<<blocks, threads>>>(blocks * threads * s, results);
+
+        uint32_t idx = s >> 28;
+        uint64_t chunk_seed = chunk_seeds[idx];
+        int32_t rot = rotations[idx];
+        int32_t ylevel = ylevels[idx];
+        uint64_t si = s & ((1 << 28) - 1);
+        // printf("chunk_seed: %ld rot: %d ylevel: %d si: %lu\n", chunk_seed, rot, ylevel, si);
+        kernel<<<blocks, threads>>>(blocks * threads * si, chunk_seed, rot, ylevel, results);
+
+        // kernel<<<blocks, threads>>>(blocks * threads * s, results);
         GPU_ASSERT(cudaPeekAtLastError());
         GPU_ASSERT(cudaDeviceSynchronize());  
         //Check error from GPU driver, if any
@@ -671,11 +587,8 @@ int main(int argc, char **argv) {
 
         #endif
         for (unsigned long long i = 0; i < result_count; i++){
-            if(results[i] > 0){
-			    fprintf(seedsout,"%llu\n", results[i]);
-                results[i] = 0;
-            }
-
+            Result r = results[i];
+			fprintf(seedsout,"%lld %d %d\n", r.world_seed, r.x, r.z);
 		}
         result_count = 0;
 		fflush(seedsout);
