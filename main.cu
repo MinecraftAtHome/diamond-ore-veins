@@ -329,6 +329,17 @@ CUDA_FUNCTION void check(uint64_t world_seed, int32_t x, int32_t z, int32_t rota
 
 #define hi32(x) (int32_t)(x >> 32)
 
+__device__ int32_t mul128div60(int64_t a, uint64_t b) {
+#if defined(__SIZEOF_INT128__)
+    return ((__int128)a * b + (MOD60 >> 1)) >> 60;
+#else
+    uint64_t lo = a * b;
+    uint64_t hi = __mul64hi(a, b);
+    uint64_t mid = (lo >> 32) + (hi << 32);
+    return (mid + (UINT64_C(1) << (60 - 1 - 32))) >> (60 - 32);
+#endif
+}
+
 __global__ void kernel(uint64_t s, uint64_t chunk_seed, int32_t rotation, int32_t ylevel, Result *out) {
     uint64_t upper60 = (uint64_t)threadIdx.x + (uint64_t)blockDim.x * (uint64_t)blockIdx.x + s;
     uint64_t world_seed = (upper60 << 4) | (chunk_seed & 0xF);
@@ -361,8 +372,12 @@ __global__ void kernel(uint64_t s, uint64_t chunk_seed, int32_t rotation, int32_
         swap(a1, b1);
     }
 
-    int32_t lx = ((__int128)(-a0) * -new_z_center + (1ull << 59)) >> 60;
-    int32_t lz = ((__int128)(+b0) * -new_z_center + (1ull << 59)) >> 60;
+    // return ((__int128)a * b + (MOD_60 >> 1)) >> 60;
+    // int32_t lx = ((__int128)(-a0) * -new_z_center + (1ull << 59)) >> 60;
+    // int32_t lz = ((__int128)(+b0) * -new_z_center + (1ull << 59)) >> 60;
+
+    int32_t lx = mul128div60(-a0, -new_z_center);
+    int32_t lz = mul128div60(+b0, -new_z_center);
 
     int32_t x = lx * b0 + lz * a0;
     int32_t z = lx * b1 + lz * a1 + new_z_center;
@@ -487,7 +502,6 @@ int main(int argc, char **argv) {
         }
     }
     uint64_t offsetStart = 0;
-    uint64_t *out;
     //GPU Params
 	uint64_t blocks = 16777216;
 	uint64_t threads = 256;
