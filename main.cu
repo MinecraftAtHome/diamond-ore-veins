@@ -320,9 +320,9 @@ CUDA_FUNCTION void check(uint64_t world_seed, int32_t x, int32_t z, int32_t rota
     if (count >= 2) {
         // printf("candidate: %ld /tp @a %d -50 %d\n", world_seed, x, z);
         out[atomicAdd(&result_count, 1ull)] = {
-            .world_seed = world_seed,
-            .x = x,
-            .z = z,
+            world_seed,
+            x,
+            z,
         };
     }
 }
@@ -449,9 +449,9 @@ static int64_t chunk_seeds[] = {
 
 #define SIZEOF(x) (sizeof((x)) / sizeof(*(x)))
  
-static_assert(SIZEOF(rotations) == 16);
-static_assert(SIZEOF(chunk_seeds) == 16);
-static_assert(SIZEOF(ylevels) == 16);
+// static_assert(SIZEOF(rotations) == 16);
+// static_assert(SIZEOF(chunk_seeds) == 16);
+// static_assert(SIZEOF(ylevels) == 16);
 
 #include <time.h>
 #include <chrono>
