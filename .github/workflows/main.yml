@@ -5,7 +5,7 @@ on: [push]
 jobs:
   windows_cuda:
     name: cuda/release/windows
-    runs-on: [windows-2025]
+    runs-on: [windows-2024]
     steps:
     - uses: actions/checkout@v4
     - uses: ilammy/msvc-dev-cmd@v1
