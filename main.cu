@@ -560,7 +560,6 @@ int main(int argc, char **argv) {
 	printf("starting...\n");
     uint64_t checkpointTemp = 0;
     FILE* seedsout = fopen("seeds.txt", "a");
-    printf("here: %d %d\n", block_min + offsetStart, block_max);
     for (uint64_t s = (uint64_t)block_min + offsetStart; s < (uint64_t)block_max; s++) {
         //Call GPU kernel
 
