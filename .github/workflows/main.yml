@@ -5,7 +5,7 @@ on: [push]
 jobs:
   windows_cuda:
     name: cuda/release/windows
-    runs-on: [windows-2024]
+    runs-on: [windows-latest]
     steps:
     - uses: actions/checkout@v4
     - uses: ilammy/msvc-dev-cmd@v1
@@ -41,7 +41,7 @@ jobs:
     - name: build
       run: |
       
-        nvcc --use_fast_math -g -maxrregcount 128 --resource-usage -lineinfo -Xptxas -lineinfo -v -O3 -arch=all -m=64 main.cu -o ${{ github.event.repository.name }}-cuda.exe -diag-suppress 177 -ID:\a\${{ github.event.repository.name }}\${{ github.event.repository.name }}\boinc\ -ID:\a\${{ github.event.repository.name }}\${{ github.event.repository.name }}\boinc\win\ -LD:\a\${{ github.event.repository.name }}\${{ github.event.repository.name }}\boinc\lib\win\ -lboinc_api -lboinc -lcuda -luser32 -DBOINC -D_WIN32 -allow-unsupported-compiler
+        nvcc -ccbin g++ --use_fast_math -g -maxrregcount 128 --resource-usage -lineinfo -Xptxas -lineinfo -v -O3 -arch=all -m=64 main.cu -o ${{ github.event.repository.name }}-cuda.exe -diag-suppress 177 -ID:\a\${{ github.event.repository.name }}\${{ github.event.repository.name }}\boinc\ -ID:\a\${{ github.event.repository.name }}\${{ github.event.repository.name }}\boinc\win\ -LD:\a\${{ github.event.repository.name }}\${{ github.event.repository.name }}\boinc\lib\win\ -lboinc_api -lboinc -lcuda -luser32 -DBOINC -D_WIN32 -allow-unsupported-compiler
         dir
     - uses: actions/upload-artifact@v4
       with:
